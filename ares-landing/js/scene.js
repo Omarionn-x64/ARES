@@ -8,6 +8,11 @@ const START_POS = { x: 0, y: 0.15, z: 1.12 };
 const ORBIT_POS = { x: 0, y: 0.9, z: 5.2 };
 const DIVE_POS = { x: 0, y: 0.1, z: 1.08 };
 const MARS_AXIAL_TILT = (25.19 * Math.PI) / 180;
+const SURFACE_MARKERS = [
+  { lat: 18, lon: 120 },
+  { lat: 18, lon: 60 },
+  { lat: -18, lon: 18 },
+];
 
 export class MarsSceneController {
   constructor(canvas, onDiveComplete) {
@@ -16,6 +21,8 @@ export class MarsSceneController {
     this.isMobile = window.innerWidth < 768;
     this.marsHovered = false;
     this.hoveredMoonId = null;
+    this.hoveredSurfaceMarkerIndex = null;
+    this.surfaceMarkers = [];
     this.moonObjects = new Map();
     this.interactiveMeshes = [];
     this.raycaster = new THREE.Raycaster();
@@ -118,6 +125,9 @@ export class MarsSceneController {
     this.marsSpinGroup = new THREE.Group();
     this.marsTiltGroup.add(this.marsSpinGroup);
 
+    this.markerGroup = new THREE.Group();
+    this.marsSpinGroup.add(this.markerGroup);
+
     const modelUrl = new URL('../3d model/24881_Mars_1_6792.glb', import.meta.url);
     new GLTFLoader().load(
       modelUrl.href,
@@ -143,6 +153,8 @@ export class MarsSceneController {
         this.marsMesh = model;
         this.marsModel = model;
         this.marsSpinGroup.add(model);
+
+        this.addSurfaceMarkers();
       },
       undefined,
       (error) => {
@@ -180,6 +192,43 @@ export class MarsSceneController {
     this.atmosphereMesh = new THREE.Mesh(atmoGeo, this.atmosphereMaterial);
     this.atmosphereMesh.scale.setScalar(1.06);
     this.marsTiltGroup.add(this.atmosphereMesh);
+  }
+
+  addSurfaceMarkers() {
+    if (!this.marsSpinGroup) return;
+
+    this.markerGroup.clear();
+
+    SURFACE_MARKERS.forEach(({ lat, lon }, index) => {
+      const latRad = (lat * Math.PI) / 180;
+      const lonRad = (lon * Math.PI) / 180;
+      const marker = new THREE.Group();
+      const outline = new THREE.Mesh(
+        new THREE.CircleGeometry(0.032, 24),
+        new THREE.MeshBasicMaterial({ color: 0x080808 })
+      );
+      const fill = new THREE.Mesh(
+        new THREE.CircleGeometry(0.024, 24),
+        new THREE.MeshBasicMaterial({ color: 0xf4b000 })
+      );
+
+      const radius = 1.02 + index * 0.005;
+      const normal = new THREE.Vector3(
+        Math.cos(latRad) * Math.cos(lonRad),
+        Math.sin(latRad),
+        Math.cos(latRad) * Math.sin(lonRad)
+      ).normalize();
+      marker.position.copy(normal).multiplyScalar(radius);
+      marker.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+      outline.userData = { type: 'surfaceMarker', markerIndex: index };
+      fill.position.z = 0.001;
+      outline.renderOrder = 1;
+      fill.renderOrder = 2;
+      marker.add(outline, fill);
+      this.markerGroup.add(marker);
+      this.surfaceMarkers.push(marker);
+      this.interactiveMeshes.push(outline);
+    });
   }
 
   createPotatoGeometry(radius, seedOffset = 0) {
@@ -401,6 +450,7 @@ export class MarsSceneController {
       if (phase !== 'orbit' && phase !== 'moonFact') {
         this.marsHovered = false;
         this.hoveredMoonId = null;
+        this.hoveredSurfaceMarkerIndex = null;
         document.body.style.cursor = 'auto';
         return;
       }
@@ -415,6 +465,14 @@ export class MarsSceneController {
         const hitData = hits[0].object.userData;
         if (hitData.type === 'moon') {
           this.hoveredMoonId = hitData.moonId;
+          this.hoveredSurfaceMarkerIndex = null;
+          this.marsHovered = false;
+          document.body.style.cursor = 'pointer';
+          return;
+        }
+        if (hitData.type === 'surfaceMarker') {
+          this.hoveredSurfaceMarkerIndex = hitData.markerIndex;
+          this.hoveredMoonId = null;
           this.marsHovered = false;
           document.body.style.cursor = 'pointer';
           return;
@@ -422,6 +480,7 @@ export class MarsSceneController {
         if (hitData.type === 'mars' && phase === 'orbit') {
           this.marsHovered = true;
           this.hoveredMoonId = null;
+          this.hoveredSurfaceMarkerIndex = null;
           document.body.style.cursor = 'pointer';
           return;
         }
@@ -429,6 +488,7 @@ export class MarsSceneController {
 
       this.marsHovered = false;
       this.hoveredMoonId = null;
+      this.hoveredSurfaceMarkerIndex = null;
       document.body.style.cursor = 'auto';
     };
 
@@ -476,7 +536,8 @@ export class MarsSceneController {
     const { phase, selectedMoon } = introStore.getState();
 
     // Rotate Mars (slower on hover to invite click)
-    const spinRate = this.marsHovered ? 0.02 : 0.06;
+    const spinRate =
+      this.hoveredSurfaceMarkerIndex !== null ? 0 : this.marsHovered ? 0.02 : 0.06;
     this.marsSpinGroup.rotation.y += dt * spinRate;
 
     // Orbit and scale moons
@@ -490,6 +551,11 @@ export class MarsSceneController {
       const isHighlighted = this.hoveredMoonId === id || selectedMoon === id;
       const targetScale = isHighlighted ? 1.45 : 1.0;
       moonObj.mesh.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.14);
+    });
+
+    this.surfaceMarkers.forEach((marker, index) => {
+      const targetScale = this.hoveredSurfaceMarkerIndex === index ? 1.35 : 1;
+      marker.scale.setScalar(marker.scale.x + (targetScale - marker.scale.x) * 0.18);
     });
 
     if (this.controls.enabled) {
