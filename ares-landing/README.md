@@ -9,9 +9,11 @@ ares-landing/
 ├── index.html          # Semantic HTML shell, HUD overlays, and import map
 ├── css/
 │   └── styles.css      # Custom HUD styling, dust flash & fade keyframes, responsive rules
+├── 3d model/
+│   └── 24881_Mars_1_6792.glb  # NASA Mars model with embedded surface maps
 ├── js/
 │   ├── main.js         # Page lifecycle, video/EDL cut timer, keyboard & UI event wiring
-│   ├── scene.js        # Three.js Mars globe, Fresnel atmosphere, moons, and GSAP camera transitions
+│   ├── scene.js        # Three.js NASA Mars model, Fresnel atmosphere, moons, and GSAP camera transitions
 │   ├── textures.js     # Procedural Martian albedo/bump generator + external texture loader
 │   ├── moonFacts.js    # Phobos & Deimos orbital parameters and fact deck
 │   └── store.js        # Reactive phase state machine (video -> transition -> orbit -> moonFact -> entering)

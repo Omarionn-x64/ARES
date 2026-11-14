@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MOONS } from './moonFacts.js';
 import { introStore } from './store.js';
-import { createMarsTextures } from './textures.js';
 
 const START_POS = { x: 0, y: 0.15, z: 1.12 };
 const ORBIT_POS = { x: 0, y: 0.9, z: 5.2 };
@@ -111,10 +111,6 @@ export class MarsSceneController {
   }
 
   initMars() {
-    const segments = this.isMobile ? 64 : 128;
-    const { colorTexture, bumpTexture } = createMarsTextures(this.isMobile);
-    this.marsTextures = [colorTexture, bumpTexture];
-
     this.marsTiltGroup = new THREE.Group();
     this.marsTiltGroup.rotation.set(0, 0, MARS_AXIAL_TILT);
     this.scene.add(this.marsTiltGroup);
@@ -122,19 +118,37 @@ export class MarsSceneController {
     this.marsSpinGroup = new THREE.Group();
     this.marsTiltGroup.add(this.marsSpinGroup);
 
-    const marsGeo = new THREE.SphereGeometry(1, segments, segments);
-    const marsMat = new THREE.MeshStandardMaterial({
-      map: colorTexture,
-      bumpMap: bumpTexture,
-      bumpScale: 0.022,
-      roughness: 0.96,
-      metalness: 0.0,
-    });
+    const modelUrl = new URL('../3d model/24881_Mars_1_6792.glb', import.meta.url);
+    new GLTFLoader().load(
+      modelUrl.href,
+      ({ scene: model }) => {
+        if (this.disposed) {
+          this.disposeMarsModel(model);
+          return;
+        }
 
-    this.marsMesh = new THREE.Mesh(marsGeo, marsMat);
-    this.marsMesh.userData = { type: 'mars' };
-    this.marsSpinGroup.add(this.marsMesh);
-    this.interactiveMeshes.push(this.marsMesh);
+        const bounds = new THREE.Box3().setFromObject(model);
+        const size = bounds.getSize(new THREE.Vector3());
+        const center = bounds.getCenter(new THREE.Vector3());
+        const scale = 2 / Math.max(size.x, size.y, size.z);
+        model.scale.setScalar(scale);
+        model.position.copy(center).multiplyScalar(-scale);
+
+        model.traverse((object) => {
+          if (!object.isMesh) return;
+          object.userData.type = 'mars';
+          this.interactiveMeshes.push(object);
+        });
+
+        this.marsMesh = model;
+        this.marsModel = model;
+        this.marsSpinGroup.add(model);
+      },
+      undefined,
+      (error) => {
+        console.error('Failed to load NASA Mars model:', error);
+      }
+    );
 
     // Fresnel atmosphere glow shader
     this.atmosphereMaterial = new THREE.ShaderMaterial({
@@ -485,6 +499,20 @@ export class MarsSceneController {
     this.renderer.render(this.scene, this.camera);
   }
 
+  disposeMarsModel(model) {
+    model.traverse((object) => {
+      if (!object.isMesh) return;
+      object.geometry.dispose();
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach((material) => {
+        Object.values(material).forEach((value) => {
+          if (value && value.isTexture) value.dispose();
+        });
+        material.dispose();
+      });
+    });
+  }
+
   dispose() {
     this.disposed = true;
     cancelAnimationFrame(this.rafId);
@@ -492,7 +520,7 @@ export class MarsSceneController {
     this.canvas.removeEventListener('pointermove', this.onPointerMove);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     this.canvas.removeEventListener('pointerup', this.onPointerUp);
-    this.marsTextures.forEach((t) => t.dispose());
+    if (this.marsModel) this.disposeMarsModel(this.marsModel);
     this.renderer.dispose();
   }
 }

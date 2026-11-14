@@ -593,6 +593,15 @@ body {
   pointer-events: none;
 }
 
+.hud-footer a {
+  color: inherit;
+  pointer-events: auto;
+}
+
+.hud-footer a:hover {
+  color: rgba(246, 244, 240, 0.9);
+}
+
 .footer-sep {
   display: none;
 }
