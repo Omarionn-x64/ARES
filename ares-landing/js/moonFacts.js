@@ -1,0 +1,36 @@
+export const MOONS = [
+  {
+    id: 'phobos',
+    name: 'Phobos',
+    subtitle: 'INNER MARTIAN SATELLITE • 22 KM',
+    orbitRadius: 1.9,
+    size: 0.09,
+    speed: 0.55,
+    inclination: 0.03,
+    model: './models/phobos.glb',
+    facts: [
+      'About 22 km across, it is the larger of Mars’s two moons.',
+      'It orbits Mars in roughly 7 hours 39 minutes—faster than Mars spins—so it rises in the west and sets in the east.',
+      'Tidal forces are slowly pulling Phobos inward by ~1.8 meters per century; it may break apart into a ring in tens of millions of years.',
+      'The huge crater Stickney spans roughly 9 km—nearly half the width of the entire moon.',
+      'Discovered by American astronomer Asaph Hall on August 18, 1877.',
+    ],
+  },
+  {
+    id: 'deimos',
+    name: 'Deimos',
+    subtitle: 'OUTER MARTIAN SATELLITE • 12 KM',
+    orbitRadius: 3.0,
+    size: 0.055,
+    speed: 0.14,
+    inclination: 0.05,
+    model: './models/deimos.glb',
+    facts: [
+      'About 12 km across, Deimos is the smaller and smoother of the two Martian moons.',
+      'It completes one orbit around Mars in roughly 30 hours and 18 minutes.',
+      'From the Martian surface, Deimos would appear like a brilliant star rather than a visible disc.',
+      'Discovered by Asaph Hall on August 12, 1877—six days before he spotted Phobos.',
+      'Planetary scientists still debate whether Phobos and Deimos are captured asteroids or re-accreted debris from an ancient giant impact.',
+    ],
+  },
+];

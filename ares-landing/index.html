@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ARES — Astronaut Routing and Environment Survival</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./css/styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <!-- Layer 1: Three.js 3D Canvas -->
+    <canvas id="mars-canvas" aria-label="Interactive 3D view of Mars and its moons Phobos and Deimos"></canvas>
+
+    <!-- WebGL Fallback Layer -->
+    <div id="webgl-fallback" class="webgl-fallback hidden" role="region" aria-label="ARES Static Fallback View">
+      <div class="fallback-mars-art" aria-hidden="true"></div>
+      <div class="fallback-content">
+        <span class="mission-badge">MARS SURFACE OPERATIONS</span>
+        <h1>ARES</h1>
+        <p>Astronaut Routing and Environment Survival — WebGL is unavailable on this device.</p>
+        <div class="fallback-actions">
+          <button type="button" class="hud-btn" data-moon="phobos">Phobos Facts</button>
+          <button type="button" class="hud-btn" data-moon="deimos">Deimos Facts</button>
+          <button type="button" class="hud-btn primary" id="fallback-enter-btn">Enter Mars (Gale Crater)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Layer 2: HTML HUD Overlay -->
+    <header class="hud-header" id="hud-header">
+      <div class="brand-lockup">
+        <span class="status-dot" id="telemetry-dot"></span>
+        <span class="brand-code">ARES // NAV-01</span>
+        <span class="phase-tag" id="phase-indicator">EDL TELEMETRY</span>
+      </div>
+      <nav class="hud-nav" aria-label="Orbital Targets">
+        <button type="button" class="nav-chip" id="btn-replay-intro" title="Replay landing sequence">Replay Intro</button>
+        <button type="button" class="nav-chip" id="btn-moon-phobos" data-moon="phobos">Phobos</button>
+        <button type="button" class="nav-chip" id="btn-moon-deimos" data-moon="deimos">Deimos</button>
+        <button type="button" class="nav-chip accent" id="btn-enter-mars">Enter Mars</button>
+      </nav>
+    </header>
+
+    <!-- Orbit Phase Title & Hint -->
+    <main class="orbit-overlay hidden" id="orbit-overlay">
+      <div class="hero-copy">
+        <p class="eyebrow">ASTRONAUT ROUTING AND ENVIRONMENT SURVIVAL</p>
+        <h1 class="hero-title">ARES</h1>
+        <p class="hero-hint" id="interaction-hint">Click a moon for facts. Click Mars to enter.</p>
+      </div>
+    </main>
+
+    <!-- Moon Fact Card Dialog -->
+    <aside
+      id="moon-fact-card"
+      class="fact-card hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="fact-moon-name"
+      tabindex="-1"
+    >
+      <div class="fact-card-header">
+        <div>
+          <span class="fact-kicker" id="fact-moon-meta">MARTIAN SATELLITE</span>
+          <h2 id="fact-moon-name">Phobos</h2>
+        </div>
+        <button type="button" class="close-btn" id="close-fact-card" aria-label="Close fact card">&times;</button>
+      </div>
+      <p class="fact-body" id="fact-text"></p>
+      <div class="fact-footer">
+        <button type="button" class="hud-btn small" id="next-fact-btn">Next fact</button>
+        <small class="fact-counter" id="fact-counter">1 / 5</small>
+      </div>
+    </aside>
+
+    <!-- Entering / Dive Transition Overlay -->
+    <div id="entering-overlay" class="entering-overlay hidden" aria-live="polite">
+      <div class="dive-reticle">
+        <span class="dive-label">INITIATING DESCENT TRAJECTORY</span>
+        <strong class="dive-target">TARGET: GALE CRATER (4.5895° S, 137.4417° E)</strong>
+      </div>
+    </div>
+
+    <!-- Site Route Preview Modal (after dive completes) -->
+    <section id="site-handoff" class="site-handoff hidden" role="region" aria-label="Gale Crater Surface Map Handoff">
+      <div class="handoff-panel">
+        <span class="mission-badge">SURFACE ROUTING READY</span>
+        <h2>Gale Crater Sector Loaded</h2>
+        <p>
+          Orbital approach complete. Ready to route to <code>/site/gale</code> for EVA terrain slope analysis,
+          hazard avoidance, and life-support telemetry.
+        </p>
+        <div class="handoff-stats">
+          <div><span>ELEVATION</span><strong>-4,501 m MOLA</strong></div>
+          <div><span>SURFACE TEMP</span><strong>-55°C / 218 K</strong></div>
+          <div><span>PRESSURE</span><strong>610 Pa (CO₂)</strong></div>
+        </div>
+        <div class="handoff-actions">
+          <button type="button" class="hud-btn primary" id="btn-launch-route">Proceed to /site/gale</button>
+          <button type="button" class="hud-btn" id="btn-return-orbit">Return to Orbit</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Layer 3: Landing Video Layer -->
+    <div id="video-layer" class="video-layer">
+      <video
+        id="landing-video"
+        autoplay
+        muted
+        playsinline
+        preload="auto"
+        poster="./video/landing-poster.jpg"
+      >
+        <source src="./video/landing.webm" type="video/webm" />
+        <source src="./video/landing.mp4" type="video/mp4" />
+      </video>
+
+      <!-- Procedural EDL Telemetry Canvas when local video is not yet added -->
+      <canvas id="edl-fallback-canvas" class="edl-sim-canvas" aria-hidden="true"></canvas>
+
+      <div class="video-hud">
+        <div class="edl-readout">
+          <span class="rec-pill">EDL CAM // MARS 2020</span>
+          <span id="edl-timer">T+ 00.0s — HYPERSONIC ENTRY</span>
+        </div>
+        <div class="video-controls">
+          <button type="button" class="hud-btn hidden" id="play-video-btn">Play Intro</button>
+          <button type="button" class="hud-btn skip-btn" id="skip-intro-btn">Skip intro</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Layer 4: Dust Flash Overlay -->
+    <div id="dust-flash" class="dust-flash hidden" aria-hidden="true"></div>
+
+    <!-- Screen Reader Live Region -->
+    <div id="sr-announcer" class="sr-only" aria-live="polite"></div>
+
+    <!-- Footer Credits -->
+    <footer class="hud-footer" id="hud-footer">
+      <span>Imagery &amp; EDL: NASA / JPL-Caltech / USGS Mars Trek</span>
+      <span class="footer-sep">•</span>
+      <span>Scroll to zoom • Drag to orbit</span>
+    </footer>
+  </div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
