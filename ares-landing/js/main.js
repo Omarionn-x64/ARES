@@ -43,6 +43,8 @@ const btnEnterMars = document.getElementById('btn-enter-mars');
 const btnCloseTrek = document.getElementById('btn-close-trek');
 const btnToggleMola = document.getElementById('btn-toggle-mola');
 const btnToggleLocalMosaic = document.getElementById('btn-toggle-local-mosaic');
+const btnToggleHeat = document.getElementById('btn-toggle-heat');
+const btnToggleWeather = document.getElementById('btn-toggle-weather');
 
 let currentFactIndex = 0;
 let sceneController = null;
@@ -401,6 +403,14 @@ function initUIEvents() {
 
   btnToggleLocalMosaic.addEventListener('click', () => {
     if (marsSurfaceMapController) marsSurfaceMapController.toggleLocalMosaic();
+  });
+
+  btnToggleHeat.addEventListener('click', () => {
+    if (marsSurfaceMapController) marsSurfaceMapController.toggleHeat();
+  });
+
+  btnToggleWeather.addEventListener('click', () => {
+    if (marsSurfaceMapController) marsSurfaceMapController.toggleWeather();
   });
 
   document.querySelectorAll('.trek-site-switcher [data-site]').forEach((button) => {
