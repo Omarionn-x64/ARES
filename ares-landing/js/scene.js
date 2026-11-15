@@ -3,51 +3,17 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MOONS } from './moonFacts.js';
 import { introStore } from './store.js';
-import { LANDING_SITE_DATA, SURFACE_MARKERS } from './siteData.js';
+import { SURFACE_MARKERS } from './siteData.js';
 
 const START_POS = { x: 0, y: 0.15, z: 1.12 };
 const ORBIT_POS = { x: 0, y: 0.9, z: 5.2 };
 const DIVE_POS = { x: 0, y: 0.1, z: 1.08 };
 const MARS_AXIAL_TILT = (25.19 * Math.PI) / 180;
-<<<<<<< HEAD
-const SURFACE_MARKERS = [
-  {
-    id: 'perseverance',
-    lat: 18,
-    lon: 120,
-    kicker: 'PERSEVERANCE / MASTCAM-Z',
-    title: 'Perseverance Landing Site',
-    details:
-      'Take a guided tour of key locations visited by Perseverance. Each point of interest along its path includes a video featuring a stunning 360° panorama from Mastcam-Z, the rover’s mast-mounted camera system.',
-  },
-  {
-    id: 'insight',
-    lat: 18,
-    lon: 60,
-    kicker: 'NASA / INSIGHT MISSION',
-    title: 'InSight Landing Site',
-    details:
-      'InSight’s planned target landing area is an ellipse. Three landing ellipses show how the target changes with the planned launch date. The ellipse lowest in the west and highest in the east corresponds to the primary launch date: May 5, 2018.',
-  },
-  {
-    id: 'gale',
-    lat: -18,
-    lon: 18,
-    kicker: 'CURIOSITY / GALE CRATER',
-    title: 'Gale Crater / Curiosity Landing Site',
-    details:
-      'Curiosity landed in Gale Crater on Mars on August 6, 2012. With a diameter of 154 km and a central peak 5.5 km tall, Gale Crater was chosen as the landing site for the Mars Science Laboratory Curiosity rover. The choice was based on evidence from orbiting spacecraft that indicate that the crater may once have contained large amounts of liquid water. The central peak, Mount Sharp, exhibits layered rock deposits rich in sedimentary minerals including clays, sulfates, and salts that require water to form.',
-  },
-];
-=======
->>>>>>> d561fef9899caf119ac5efb85dea48346dcdd542
 
 export class MarsSceneController {
-  constructor(canvas, onDiveComplete, onSiteHover = null, onSiteSelect = null) {
+  constructor(canvas, onDiveComplete) {
     this.canvas = canvas;
     this.onDiveComplete = onDiveComplete;
-    this.onSiteHover = onSiteHover;
-    this.onSiteSelect = onSiteSelect;
     this.isMobile = window.innerWidth < 768;
     this.marsHovered = false;
     this.hoveredMoonId = null;
@@ -231,12 +197,12 @@ export class MarsSceneController {
     this.markerGroup.clear();
     this.surfaceMarkers = [];
 
-    SURFACE_MARKERS.forEach(({ lat, lon, siteId }, index) => {
+    SURFACE_MARKERS.forEach(({ lat, lon, id }, index) => {
       const latRad = (lat * Math.PI) / 180;
       const lonRad = (lon * Math.PI) / 180;
       const marker = new THREE.Group();
-      const isCuriosity = siteId === 'curiosity';
-      const markerScale = isCuriosity ? 1.32 : 1;
+      const isGale = id === 'gale';
+      const markerScale = isGale ? 1.32 : 1;
 
       const outline = new THREE.Mesh(
         new THREE.CircleGeometry(0.032 * markerScale, 24),
@@ -251,7 +217,7 @@ export class MarsSceneController {
         })
       );
 
-      const radius = isCuriosity ? 1.018 : 1.02 + index * 0.005;
+      const radius = 1.02 + index * 0.005;
       const normal = new THREE.Vector3(
         Math.cos(latRad) * Math.cos(lonRad),
         Math.sin(latRad),
@@ -261,7 +227,7 @@ export class MarsSceneController {
       marker.position.copy(normal).multiplyScalar(radius);
       marker.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
 
-      outline.userData = { type: 'surfaceMarker', markerIndex: index, siteId };
+      outline.userData = { type: 'surfaceMarker', markerIndex: index, siteId: id };
       fill.position.z = 0.001;
       outline.renderOrder = 1;
       fill.renderOrder = 2;
@@ -458,41 +424,6 @@ export class MarsSceneController {
     });
   }
 
-  zoomToLandingSite() {
-    this.focusOnLandingSite('curiosity');
-  }
-
-  focusOnLandingSite(siteId) {
-    if (siteId !== 'curiosity') return;
-
-    const site = LANDING_SITE_DATA[siteId];
-    if (!site) return;
-
-    const latRad = (site.lat * Math.PI) / 180;
-    const lonRad = (site.lon * Math.PI) / 180;
-    const normal = new THREE.Vector3(
-      Math.cos(latRad) * Math.cos(lonRad),
-      Math.sin(latRad),
-      Math.cos(latRad) * Math.sin(lonRad)
-    ).normalize();
-
-    const targetPos = normal.clone().multiplyScalar(1.18);
-    targetPos.y += 0.18;
-
-    this.controls.enabled = false;
-    gsap.to(this.camera.position, {
-      x: targetPos.x,
-      y: targetPos.y,
-      z: targetPos.z,
-      duration: 1.6,
-      ease: 'power2.inOut',
-      onUpdate: () => this.camera.lookAt(0, 0, 0),
-      onComplete: () => {
-        this.controls.enabled = true;
-      },
-    });
-  }
-
   playDiveTransition(reduceMotion = false) {
     this.controls.enabled = false;
     gsap.to(this.camera.position, {
@@ -582,9 +513,6 @@ export class MarsSceneController {
           this.marsHovered = false;
           this.updateSurfaceMarkerTooltip(hitData.markerIndex, e);
           document.body.style.cursor = 'pointer';
-          if (hitData.siteId === 'curiosity' && this.onSiteHover) {
-            this.onSiteHover('curiosity');
-          }
           return;
         }
         if (hitData.type === 'mars' && phase === 'orbit') {
@@ -602,9 +530,6 @@ export class MarsSceneController {
       this.hoveredSurfaceMarkerIndex = null;
       this.updateSurfaceMarkerTooltip(null);
       document.body.style.cursor = 'auto';
-      if (this.onSiteHover) {
-        this.onSiteHover(null);
-      }
     };
 
     this.onPointerDown = (e) => {
@@ -632,27 +557,16 @@ export class MarsSceneController {
 
       if (hitData.type === 'moon') {
         introStore.selectMoon(hitData.moonId);
-<<<<<<< HEAD
-      } else if (hitData.type === 'surfaceMarker' && phase === 'orbit') {
-        const marker = SURFACE_MARKERS[hitData.markerIndex];
-        if (marker) introStore.setPhase('entering', marker.id);
-      } else if (hitData.type === 'mars' && phase === 'orbit') {
-=======
         return;
       }
 
-      if (hitData.type === 'surfaceMarker') {
-        if (hitData.siteId === 'curiosity' && this.onSiteSelect) {
-          this.onSiteSelect('curiosity');
-        }
-        if (hitData.siteId === 'curiosity' && this.onSiteHover) {
-          this.onSiteHover('curiosity');
-        }
+      if (hitData.type === 'surfaceMarker' && phase === 'orbit') {
+        const marker = SURFACE_MARKERS[hitData.markerIndex];
+        if (marker) introStore.setPhase('entering', marker.id);
         return;
       }
 
       if (hitData.type === 'mars' && phase === 'orbit') {
->>>>>>> d561fef9899caf119ac5efb85dea48346dcdd542
         introStore.setPhase('entering');
       }
     };
@@ -667,7 +581,11 @@ export class MarsSceneController {
     this.rafId = requestAnimationFrame(this.animate);
 
     const { phase } = introStore.getState();
-    if (this.marsSpinGroup && phase !== 'video') {
+    if (
+      this.marsSpinGroup &&
+      phase !== 'video' &&
+      this.hoveredSurfaceMarkerIndex === null
+    ) {
       this.marsSpinGroup.rotation.y += 0.0022;
     }
 
