@@ -15,5 +15,294 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <div id="app" class="app-shell">
+      <!-- Layer 1: Three.js 3D Canvas -->
+      <canvas
+        id="mars-canvas"
+        aria-label="Interactive 3D view of Mars and its moons Phobos and Deimos"
+      ></canvas>
+
+      <div
+        id="surface-marker-tooltip"
+        class="surface-marker-tooltip hidden"
+        role="tooltip"
+        aria-hidden="true"
+      >
+        <span class="fact-kicker"></span>
+        <h2></h2>
+        <p></p>
+      </div>
+
+      <!-- WebGL Fallback Layer -->
+      <div
+        id="webgl-fallback"
+        class="webgl-fallback hidden"
+        role="region"
+        aria-label="ARES Static Fallback View"
+      >
+        <div class="fallback-mars-art" aria-hidden="true"></div>
+        <div class="fallback-content">
+          <span class="mission-badge">MARS SURFACE OPERATIONS</span>
+          <h1>ARES</h1>
+          <p>
+            Astronaut Routing and Environment Survival — WebGL is unavailable on
+            this device.
+          </p>
+          <div class="fallback-actions">
+            <button type="button" class="hud-btn" data-moon="phobos">
+              Phobos Facts
+            </button>
+            <button type="button" class="hud-btn" data-moon="deimos">
+              Deimos Facts
+            </button>
+            <button
+              type="button"
+              class="hud-btn primary"
+              id="fallback-enter-btn"
+            >
+              Enter Mars (Gale Crater)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Layer 2: HTML HUD Overlay -->
+      <header class="hud-header" id="hud-header">
+        <div class="brand-lockup">
+          <span class="status-dot" id="telemetry-dot"></span>
+          <span class="brand-code">ARES // NAV-01</span>
+          <span class="phase-tag" id="phase-indicator">EDL TELEMETRY</span>
+        </div>
+        <nav class="hud-nav" aria-label="Orbital Targets">
+          <button
+            type="button"
+            class="nav-chip"
+            id="btn-replay-intro"
+            title="Replay landing sequence"
+          >
+            Replay Intro
+          </button>
+          <button
+            type="button"
+            class="nav-chip"
+            id="btn-moon-phobos"
+            data-moon="phobos"
+          >
+            Phobos
+          </button>
+          <button
+            type="button"
+            class="nav-chip"
+            id="btn-moon-deimos"
+            data-moon="deimos"
+          >
+            Deimos
+          </button>
+          <button type="button" class="nav-chip accent" id="btn-enter-mars">
+            Enter Mars
+          </button>
+        </nav>
+      </header>
+
+      <!-- Orbit Phase Title & Hint -->
+      <main class="orbit-overlay hidden" id="orbit-overlay">
+        <div class="hero-copy">
+          <p class="eyebrow">ASTRONAUT RESEARCH AND ENVIRONMENT SURVIVAL</p>
+          <h1 class="hero-title">ARES</h1>
+          <p class="hero-hint" id="interaction-hint">
+            Click a moon for facts. Click Mars to enter.
+          </p>
+        </div>
+      </main>
+
+      <!-- Moon Fact Card Dialog -->
+      <aside
+        id="moon-fact-card"
+        class="fact-card hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fact-moon-name"
+        tabindex="-1"
+      >
+        <div class="fact-card-header">
+          <div>
+            <span class="fact-kicker" id="fact-moon-meta"
+              >MARTIAN SATELLITE</span
+            >
+            <h2 id="fact-moon-name">Phobos</h2>
+          </div>
+          <button
+            type="button"
+            class="close-btn"
+            id="close-fact-card"
+            aria-label="Close fact card"
+          >
+            &times;
+          </button>
+        </div>
+        <p class="fact-body" id="fact-text"></p>
+        <div class="fact-footer">
+          <button type="button" class="hud-btn small" id="next-fact-btn">
+            Next fact
+          </button>
+          <small class="fact-counter" id="fact-counter">1 / 5</small>
+        </div>
+      </aside>
+
+      <!-- Entering / Dive Transition Overlay -->
+      <div
+        id="entering-overlay"
+        class="entering-overlay hidden"
+        aria-live="polite"
+      >
+        <div class="dive-reticle">
+          <span class="dive-label">INITIATING DESCENT TRAJECTORY</span>
+          <strong class="dive-target"
+            >TARGET: GALE CRATER (4.5895° S, 137.4417° E)</strong
+          >
+          <p id="dive-details" class="dive-details hidden"></p>
+        </div>
+      </div>
+
+      <section
+        id="mars-trek-view"
+        class="mars-trek-view hidden"
+        aria-label="Interactive Mars surface map"
+      >
+        <header class="trek-toolbar">
+          <div class="trek-site-heading">
+            <span id="trek-kicker" class="trek-kicker"></span>
+            <h1 id="trek-site-title"></h1>
+          </div>
+          <nav class="trek-site-switcher" aria-label="Landing sites">
+            <button type="button" data-site="perseverance">Perseverance</button>
+            <button type="button" data-site="gale">Curiosity / Gale</button>
+            <button type="button" data-site="insight">InSight</button>
+          </nav>
+          <div class="trek-toolbar-actions">
+            <button
+              type="button"
+              id="btn-toggle-local-mosaic"
+              class="trek-toolbar-button hidden"
+              aria-pressed="false"
+            >
+              Local Mosaic: OFF
+            </button>
+            <button
+              type="button"
+              id="btn-toggle-mola"
+              class="trek-toolbar-button"
+              aria-pressed="false"
+            >
+              MOLA Elevation: OFF
+            </button>
+            <button type="button" class="trek-toolbar-button" id="btn-toggle-heat" aria-pressed="false">
+              Heat Map: OFF
+            </button>
+            <button type="button" class="trek-toolbar-button" id="btn-toggle-weather" aria-pressed="false">
+              Weather Map: OFF
+            </button>
+            <button type="button" id="btn-close-trek" class="trek-toolbar-button">
+              Return to Orbit
+            </button>
+          </div>
+        </header>
+        <div class="trek-workspace">
+          <div
+            id="mars-leaflet-map"
+            class="mars-leaflet-map"
+            role="application"
+            aria-label="Interactive Mars mission map"
+          >
+            <p id="trek-map-status" class="trek-map-status hidden" role="status"></p>
+          </div>
+          <aside
+            id="site-info-drawer"
+            class="site-info-drawer"
+            aria-labelledby="drawer-title"
+            aria-live="polite"
+          >
+            <p id="drawer-sol" class="drawer-sol"></p>
+            <h2 id="drawer-title"></h2>
+            <p id="drawer-coords" class="drawer-coords"></p>
+            <dl class="drawer-telemetry">
+              <div>
+                <dt>MOLA elevation (DEM reference)</dt>
+                <dd id="drawer-elev"></dd>
+              </div>
+              <div>
+                <dt>Geology</dt>
+                <dd id="drawer-geology"></dd>
+              </div>
+              <div>
+                <dt>Mission equipment</dt>
+                <dd id="drawer-inst"></dd>
+              </div>
+            </dl>
+            <p id="drawer-summary" class="drawer-summary"></p>
+            <section class="drawer-waypoints" aria-labelledby="drawer-waypoint-heading">
+              <h3 id="drawer-waypoint-heading">Selected mission POIs</h3>
+              <p id="drawer-waypoint-note" class="drawer-waypoint-note">
+                NASA traverse overlay shown where available. POIs are selected campaign markers, not every drive endpoint; some mark a broader area rather than an exact stop. Elevations are nearest-cell MOLA DEM samples (~463 m at the equator).
+              </p>
+              <div id="drawer-waypoint-list" class="drawer-waypoint-list"></div>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <!-- Layer 3: Landing Video Layer -->
+      <div id="video-layer" class="video-layer">
+        <video
+          id="landing-video"
+          autoplay
+          muted
+          playsinline
+          preload="auto"
+          poster="./video/landing-poster.jpg"
+        >
+          <source src="./INTRO.mp4" type="video/mp4" />
+          <source src="./video/landing.webm" type="video/webm" />
+          <source src="./video/landing.mp4" type="video/mp4" />
+        </video>
+
+        <!-- Procedural EDL Telemetry Canvas when local video is not yet added -->
+        <canvas
+          id="edl-fallback-canvas"
+          class="edl-sim-canvas"
+          aria-hidden="true"
+        ></canvas>
+
+        <div class="video-hud">
+          <div class="edl-readout">
+            <span class="rec-pill">EDL CAM // MARS 2020</span>
+            <span id="edl-timer">T+ 00.0s — HYPERSONIC ENTRY</span>
+          </div>
+          <div class="video-controls">
+            <button type="button" class="hud-btn hidden" id="play-video-btn">
+              Play Intro
+            </button>
+            <button type="button" class="hud-btn skip-btn" id="skip-intro-btn">
+              Skip intro
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Layer 4: Dust Flash Overlay -->
+      <div id="dust-flash" class="dust-flash hidden" aria-hidden="true"></div>
+
+      <!-- Screen Reader Live Region -->
+      <div id="sr-announcer" class="sr-only" aria-live="polite"></div>
+
+      <!-- Footer Credits -->
+      <footer class="hud-footer" id="hud-footer">
+        <span>Imagery &amp; EDL: NASA / JPL-Caltech / USGS</span>
+
+        <span>Scroll to zoom • Drag to orbit</span>
+      </footer>
+    </div>
+
+    <script type="module" src="./js/main.js"></script>
   </body>
 </html>

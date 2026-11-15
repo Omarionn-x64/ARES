@@ -9,9 +9,21 @@ export class MarsSurfaceMapController {
       throw new Error('The Mars map container is unavailable.');
     }
 
+<<<<<<< HEAD
     this.L = L;
     this.onStateChange = onStateChange;
     this.map = this.L.map(container, {
+=======
+    this.L = window.L;
+    this.view = document.getElementById('mars-trek-view');
+    this.mapStatus = document.getElementById('trek-map-status');
+    this.molaButton = document.getElementById('btn-toggle-mola');
+    this.localMosaicButton = document.getElementById('btn-toggle-local-mosaic');
+    this.heatButton = document.getElementById('btn-toggle-heat');
+    this.weatherButton = document.getElementById('btn-toggle-weather');
+
+    this.map = this.L.map(containerId, {
+>>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
       crs: this.L.CRS.EPSG4326,
       minZoom: 0,
       maxZoom: 18,
@@ -39,12 +51,46 @@ export class MarsSurfaceMapController {
       noWrap: true,
       opacity: MOLA_OPACITY,
     });
+
+    this.heatLayer = this.L.tileLayer(NASA_TREK_TILES.heatMap, {
+      attribution: 'NASA THEMIS Day IR',
+      bounds: this.L.latLngBounds([[-90, -180], [90, 180]]),
+      maxNativeZoom: 7,
+      maxZoom: 18,
+      noWrap: true,
+      opacity: 0.6,
+    });
+
+    this.weatherLayer = this.L.tileLayer(NASA_TREK_TILES.weatherMap, {
+      attribution: 'NASA MGS TES Albedo',
+      bounds: this.L.latLngBounds([[-90, -180], [90, 180]]),
+      // The TES Albedo WMTS publishes only matrix levels 0 and 1.
+      maxNativeZoom: 1,
+      maxZoom: 18,
+      noWrap: true,
+      opacity: 0.5,
+    });
+
     this.molaLayer.on('tileerror', () => {
       if (!this.molaEnabled) return;
       this.molaEnabled = false;
       this.map.removeLayer(this.molaLayer);
       this.syncToolbar();
       this.showStatus('MOLA elevation tiles could not be loaded. The optical map remains available.');
+    });
+    this.heatLayer.on('tileerror', () => {
+      if (!this.heatEnabled) return;
+      this.heatEnabled = false;
+      this.map.removeLayer(this.heatLayer);
+      this.syncToolbar();
+      this.showStatus('THEMIS heat-map tiles could not be loaded. The optical map remains available.');
+    });
+    this.weatherLayer.on('tileerror', () => {
+      if (!this.weatherEnabled) return;
+      this.weatherEnabled = false;
+      this.map.removeLayer(this.weatherLayer);
+      this.syncToolbar();
+      this.showStatus('TES surface-map tiles could not be loaded. The optical map remains available.');
     });
 
     this.markersLayer = this.L.layerGroup().addTo(this.map);
@@ -57,6 +103,9 @@ export class MarsSurfaceMapController {
     this.molaEnabled = false;
     this.localMosaicEnabled = false;
     this.localTileErrorReported = false;
+    this.heatEnabled = false;
+    this.weatherEnabled = false;
+    this.routePolyline = null;
 
     this.L.control.scale({ imperial: false, maxWidth: 140 }).addTo(this.map);
     this.map.on('moveend resize', () => {
@@ -91,7 +140,18 @@ export class MarsSurfaceMapController {
     this.routeLayerFailed = false;
     this.map.setView(site.center, site.zoom, { animate: false });
 
+<<<<<<< HEAD
     this.renderRoute();
+=======
+    document.getElementById('trek-kicker').textContent = site.kicker;
+    document.getElementById('trek-site-title').textContent = site.title;
+    document.querySelectorAll('.trek-site-switcher [data-site]').forEach((button) => {
+      const active = button.dataset.site === site.id;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+
+>>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
     this.renderWaypoints();
     this.prepareLocalLayer();
     this.syncToolbar();
@@ -124,14 +184,42 @@ export class MarsSurfaceMapController {
     return this.localMosaicEnabled;
   }
 
+  toggleHeat() {
+    if (this.heatEnabled) {
+      this.map.removeLayer(this.heatLayer);
+      this.heatEnabled = false;
+    } else {
+      this.heatLayer.addTo(this.map);
+      this.heatEnabled = true;
+    }
+    this.syncToolbar();
+    return this.heatEnabled;
+  }
+
+  toggleWeather() {
+    if (this.weatherEnabled) {
+      this.map.removeLayer(this.weatherLayer);
+      this.weatherEnabled = false;
+    } else {
+      this.weatherLayer.addTo(this.map);
+      this.weatherEnabled = true;
+    }
+    this.syncToolbar();
+    return this.weatherEnabled;
+  }
+
   removeOptionalLayers() {
     if (this.molaEnabled) this.map.removeLayer(this.molaLayer);
     if (this.localLayer && this.localMosaicEnabled) {
       this.map.removeLayer(this.localLayer);
     }
+    if (this.heatEnabled) this.map.removeLayer(this.heatLayer);
+    if (this.weatherEnabled) this.map.removeLayer(this.weatherLayer);
     window.clearTimeout(this.localLayerUpdateTimer);
     this.molaEnabled = false;
     this.localMosaicEnabled = false;
+    this.heatEnabled = false;
+    this.weatherEnabled = false;
     this.localTileErrorReported = false;
   }
 
@@ -141,6 +229,10 @@ export class MarsSurfaceMapController {
     if (this.routeLayer) {
       this.map.removeLayer(this.routeLayer);
       this.routeLayer = null;
+    }
+    if (this.routePolyline) {
+      this.map.removeLayer(this.routePolyline);
+      this.routePolyline = null;
     }
     window.clearTimeout(this.routeLayerUpdateTimer);
   }
@@ -293,6 +385,11 @@ export class MarsSurfaceMapController {
   }
 
   renderWaypoints() {
+<<<<<<< HEAD
+=======
+    const waypointList = document.getElementById('drawer-waypoint-list');
+    const coordinates = [];
+>>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
     this.site.waypoints.forEach((waypoint, index) => {
       const marker = this.L.marker(waypoint.coordinates, {
         alt: waypoint.title,
@@ -304,7 +401,38 @@ export class MarsSurfaceMapController {
       marker.bindTooltip(waypoint.title, { direction: 'top', offset: [0, -14] });
       marker.on('click', () => this.selectWaypoint(index, true));
       this.waypointMarkers.push(marker);
+<<<<<<< HEAD
+=======
+      coordinates.push(waypoint.coordinates);
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'drawer-waypoint-button';
+      button.setAttribute('aria-pressed', 'false');
+      button.addEventListener('click', () => this.selectWaypoint(index, true));
+
+      const title = document.createElement('span');
+      title.className = 'drawer-waypoint-title';
+      title.textContent = waypoint.title;
+      const phase = document.createElement('span');
+      phase.className = 'drawer-waypoint-phase';
+      phase.textContent = `SOL ${waypoint.sol} · ${waypoint.date} · ${waypoint.phase}`;
+      button.append(title, phase);
+      waypointList.append(button);
+>>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
     });
+
+    // Draw red dashed connection line between all POIs
+    if (coordinates.length > 1) {
+      this.routePolyline = this.L.polyline(coordinates, {
+        color: '#c1440e',
+        weight: 3,
+        opacity: 0.85,
+        dashArray: '10, 8',
+        lineJoin: 'round',
+        interactive: false,
+      }).addTo(this.map);
+    }
   }
 
   createPinIcon(index, active) {
@@ -332,6 +460,33 @@ export class MarsSurfaceMapController {
       localMosaicEnabled: this.localMosaicEnabled,
     });
 
+<<<<<<< HEAD
+=======
+    document.getElementById('drawer-sol').textContent =
+      `SOL ${waypoint.sol} · ${waypoint.date} · ${waypoint.phase}`;
+    document.getElementById('drawer-title').textContent = waypoint.title;
+    document.getElementById('drawer-coords').textContent =
+      this.formatCoordinates(waypoint.coordinates);
+    document.getElementById('drawer-elev').textContent = waypoint.elevation;
+    document.getElementById('drawer-geology').textContent = waypoint.geology;
+    document.getElementById('drawer-inst').textContent = waypoint.instruments.join(' · ');
+    document.getElementById('drawer-summary').textContent = waypoint.summary;
+
+    // Open POI popup on the map at the marker location
+    const popupContent = `
+      <div class="poi-popup">
+        <div class="poi-popup-sol">${waypoint.sol} · ${waypoint.date} · ${waypoint.phase}</div>
+        <h3 class="poi-popup-title">${waypoint.title}</h3>
+        <div class="poi-popup-coords">${this.formatCoordinates(waypoint.coordinates)}</div>
+        <div class="poi-popup-elev">${waypoint.elevation}</div>
+        <div class="poi-popup-inst">${waypoint.instruments.join(' · ')}</div>
+        <div class="poi-popup-summary">${waypoint.summary}</div>
+      </div>
+    `;
+    const marker = this.waypointMarkers[index];
+    marker.bindPopup(popupContent, { className: 'poi-leaflet-popup', offset: [0, -18] }).openPopup();
+
+>>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
     if (flyTo) {
       this.map.flyTo(waypoint.coordinates, Math.min(17, this.site.zoom + 2), {
         duration: 0.8,
@@ -340,6 +495,7 @@ export class MarsSurfaceMapController {
   }
 
   syncToolbar() {
+<<<<<<< HEAD
     this.onStateChange({
       status: this.status || '',
       site: this.site,
@@ -347,6 +503,18 @@ export class MarsSurfaceMapController {
       molaEnabled: this.molaEnabled,
       localMosaicEnabled: this.localMosaicEnabled,
     });
+=======
+    this.molaButton.textContent = `MOLA Elevation: ${this.molaEnabled ? 'ON' : 'OFF'}`;
+    this.molaButton.setAttribute('aria-pressed', String(this.molaEnabled));
+    this.localMosaicButton.classList.toggle('hidden', !this.site.localTileLayer);
+    this.localMosaicButton.textContent =
+      `Local Mosaic: ${this.localMosaicEnabled ? 'ON' : 'OFF'}`;
+    this.localMosaicButton.setAttribute('aria-pressed', String(this.localMosaicEnabled));
+    this.heatButton.textContent = `Heat Map: ${this.heatEnabled ? 'ON' : 'OFF'}`;
+    this.heatButton.setAttribute('aria-pressed', String(this.heatEnabled));
+    this.weatherButton.textContent = `Weather Map: ${this.weatherEnabled ? 'ON' : 'OFF'}`;
+    this.weatherButton.setAttribute('aria-pressed', String(this.weatherEnabled));
+>>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
   }
 
   showStatus(message) {
