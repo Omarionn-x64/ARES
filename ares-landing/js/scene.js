@@ -3,21 +3,19 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MOONS } from './moonFacts.js';
 import { introStore } from './store.js';
+import { LANDING_SITE_DATA, SURFACE_MARKERS } from './siteData.js';
 
 const START_POS = { x: 0, y: 0.15, z: 1.12 };
 const ORBIT_POS = { x: 0, y: 0.9, z: 5.2 };
 const DIVE_POS = { x: 0, y: 0.1, z: 1.08 };
 const MARS_AXIAL_TILT = (25.19 * Math.PI) / 180;
-const SURFACE_MARKERS = [
-  { lat: 18, lon: 120 },
-  { lat: 18, lon: 60 },
-  { lat: -18, lon: 18 },
-];
 
 export class MarsSceneController {
-  constructor(canvas, onDiveComplete) {
+  constructor(canvas, onDiveComplete, onSiteHover = null, onSiteSelect = null) {
     this.canvas = canvas;
     this.onDiveComplete = onDiveComplete;
+    this.onSiteHover = onSiteHover;
+    this.onSiteSelect = onSiteSelect;
     this.isMobile = window.innerWidth < 768;
     this.marsHovered = false;
     this.hoveredMoonId = null;
@@ -75,7 +73,6 @@ export class MarsSceneController {
     sunLight.position.set(5, 2, 4);
     this.scene.add(sunLight);
 
-    // Subtle rim light to separate dark hemisphere from deep space
     const rimLight = new THREE.DirectionalLight(0x7a3418, 0.28);
     rimLight.position.set(-4, -1.5, -3);
     this.scene.add(rimLight);
@@ -153,7 +150,6 @@ export class MarsSceneController {
         this.marsMesh = model;
         this.marsModel = model;
         this.marsSpinGroup.add(model);
-
         this.addSurfaceMarkers();
       },
       undefined,
@@ -162,7 +158,6 @@ export class MarsSceneController {
       }
     );
 
-    // Fresnel atmosphere glow shader
     this.atmosphereMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uOpacity: { value: 0.35 },
@@ -198,33 +193,44 @@ export class MarsSceneController {
     if (!this.marsSpinGroup) return;
 
     this.markerGroup.clear();
+    this.surfaceMarkers = [];
 
-    SURFACE_MARKERS.forEach(({ lat, lon }, index) => {
+    SURFACE_MARKERS.forEach(({ lat, lon, siteId }, index) => {
       const latRad = (lat * Math.PI) / 180;
       const lonRad = (lon * Math.PI) / 180;
       const marker = new THREE.Group();
+      const isCuriosity = siteId === 'curiosity';
+      const markerScale = isCuriosity ? 1.32 : 1;
+
       const outline = new THREE.Mesh(
-        new THREE.CircleGeometry(0.032, 24),
-        new THREE.MeshBasicMaterial({ color: 0x080808 })
+        new THREE.CircleGeometry(0.032 * markerScale, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0x080808,
+        })
       );
       const fill = new THREE.Mesh(
-        new THREE.CircleGeometry(0.024, 24),
-        new THREE.MeshBasicMaterial({ color: 0xf4b000 })
+        new THREE.CircleGeometry(0.024 * markerScale, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0xf4b000,
+        })
       );
 
-      const radius = 1.02 + index * 0.005;
+      const radius = isCuriosity ? 1.018 : 1.02 + index * 0.005;
       const normal = new THREE.Vector3(
         Math.cos(latRad) * Math.cos(lonRad),
         Math.sin(latRad),
         Math.cos(latRad) * Math.sin(lonRad)
       ).normalize();
+
       marker.position.copy(normal).multiplyScalar(radius);
       marker.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
-      outline.userData = { type: 'surfaceMarker', markerIndex: index };
+
+      outline.userData = { type: 'surfaceMarker', markerIndex: index, siteId };
       fill.position.z = 0.001;
       outline.renderOrder = 1;
       fill.renderOrder = 2;
       marker.add(outline, fill);
+
       this.markerGroup.add(marker);
       this.surfaceMarkers.push(marker);
       this.interactiveMeshes.push(outline);
@@ -239,7 +245,6 @@ export class MarsSceneController {
     for (let i = 0; i < pos.count; i++) {
       v.fromBufferAttribute(pos, i);
       const dir = v.clone().normalize();
-      // Elongated asteroid-like proportions + crater indentations
       const lump =
         1 +
         0.18 * Math.sin(dir.x * 3.1 + seedOffset) * Math.cos(dir.y * 2.4) +
@@ -260,7 +265,6 @@ export class MarsSceneController {
       inclinationGroup.rotation.x = moon.inclination;
       this.scene.add(inclinationGroup);
 
-      // Subtle orbital path ring
       const ringPoints = [];
       for (let i = 0; i <= 128; i++) {
         const a = (i / 128) * Math.PI * 2;
@@ -277,7 +281,6 @@ export class MarsSceneController {
       const ringLine = new THREE.Line(ringGeo, ringMat);
       inclinationGroup.add(ringLine);
 
-      // Orbit pivot
       const pivot = new THREE.Group();
       pivot.rotation.y = idx === 0 ? 0.65 : 2.4;
       inclinationGroup.add(pivot);
@@ -286,7 +289,6 @@ export class MarsSceneController {
       moonHolder.position.set(moon.orbitRadius, 0, 0);
       pivot.add(moonHolder);
 
-      // Irregular potato-shaped moon mesh
       const mesh = new THREE.Mesh(
         this.createPotatoGeometry(moon.size, idx * 2.5),
         new THREE.MeshStandardMaterial({
@@ -297,7 +299,6 @@ export class MarsSceneController {
       );
       moonHolder.add(mesh);
 
-      // 3x invisible hit target for easy desktop/touch selection
       const hitTarget = new THREE.Mesh(
         new THREE.SphereGeometry(moon.size * 3.2, 16, 16),
         new THREE.MeshBasicMaterial({ visible: false })
@@ -405,7 +406,6 @@ export class MarsSceneController {
     const worldPos = new THREE.Vector3();
     moonObj.holder.getWorldPosition(worldPos);
 
-    // Gently frame Mars + selected moon
     const targetCam = worldPos
       .clone()
       .normalize()
@@ -419,6 +419,41 @@ export class MarsSceneController {
       duration: 1.1,
       ease: 'power2.out',
       onUpdate: () => this.camera.lookAt(0, 0, 0),
+    });
+  }
+
+  zoomToLandingSite() {
+    this.focusOnLandingSite('curiosity');
+  }
+
+  focusOnLandingSite(siteId) {
+    if (siteId !== 'curiosity') return;
+
+    const site = LANDING_SITE_DATA[siteId];
+    if (!site) return;
+
+    const latRad = (site.lat * Math.PI) / 180;
+    const lonRad = (site.lon * Math.PI) / 180;
+    const normal = new THREE.Vector3(
+      Math.cos(latRad) * Math.cos(lonRad),
+      Math.sin(latRad),
+      Math.cos(latRad) * Math.sin(lonRad)
+    ).normalize();
+
+    const targetPos = normal.clone().multiplyScalar(1.18);
+    targetPos.y += 0.18;
+
+    this.controls.enabled = false;
+    gsap.to(this.camera.position, {
+      x: targetPos.x,
+      y: targetPos.y,
+      z: targetPos.z,
+      duration: 1.6,
+      ease: 'power2.inOut',
+      onUpdate: () => this.camera.lookAt(0, 0, 0),
+      onComplete: () => {
+        this.controls.enabled = true;
+      },
     });
   }
 
@@ -475,6 +510,9 @@ export class MarsSceneController {
           this.hoveredMoonId = null;
           this.marsHovered = false;
           document.body.style.cursor = 'pointer';
+          if (hitData.siteId === 'curiosity' && this.onSiteHover) {
+            this.onSiteHover('curiosity');
+          }
           return;
         }
         if (hitData.type === 'mars' && phase === 'orbit') {
@@ -490,6 +528,9 @@ export class MarsSceneController {
       this.hoveredMoonId = null;
       this.hoveredSurfaceMarkerIndex = null;
       document.body.style.cursor = 'auto';
+      if (this.onSiteHover) {
+        this.onSiteHover(null);
+      }
     };
 
     this.onPointerDown = (e) => {
@@ -501,7 +542,6 @@ export class MarsSceneController {
         e.clientX - this.pointerDownPos.x,
         e.clientY - this.pointerDownPos.y
       );
-      // Ignore camera orbit drags
       if (dist > 6) return;
 
       const { phase } = introStore.getState();
@@ -515,50 +555,42 @@ export class MarsSceneController {
       if (hits.length === 0) return;
 
       const hitData = hits[0].object.userData;
+
       if (hitData.type === 'moon') {
         introStore.selectMoon(hitData.moonId);
-      } else if (hitData.type === 'mars' && phase === 'orbit') {
+        return;
+      }
+
+      if (hitData.type === 'surfaceMarker') {
+        if (hitData.siteId === 'curiosity' && this.onSiteSelect) {
+          this.onSiteSelect('curiosity');
+        }
+        if (hitData.siteId === 'curiosity' && this.onSiteHover) {
+          this.onSiteHover('curiosity');
+        }
+        return;
+      }
+
+      if (hitData.type === 'mars' && phase === 'orbit') {
         introStore.setPhase('entering');
       }
     };
 
     window.addEventListener('resize', this.onResize);
-    this.canvas.addEventListener('pointermove', this.onPointerMove);
-    this.canvas.addEventListener('pointerdown', this.onPointerDown);
-    this.canvas.addEventListener('pointerup', this.onPointerUp);
+    window.addEventListener('pointermove', this.onPointerMove);
+    window.addEventListener('pointerdown', this.onPointerDown);
+    window.addEventListener('pointerup', this.onPointerUp);
   }
 
   animate() {
-    if (this.disposed) return;
     this.rafId = requestAnimationFrame(this.animate);
 
-    const dt = Math.min(this.clock.getDelta(), 0.05);
-    const { phase, selectedMoon } = introStore.getState();
+    const { phase } = introStore.getState();
+    if (this.marsSpinGroup && phase !== 'video') {
+      this.marsSpinGroup.rotation.y += 0.0022;
+    }
 
-    // Rotate Mars (slower on hover to invite click)
-    const spinRate =
-      this.hoveredSurfaceMarkerIndex !== null ? 0 : this.marsHovered ? 0.02 : 0.06;
-    this.marsSpinGroup.rotation.y += dt * spinRate;
-
-    // Orbit and scale moons
-    this.moonObjects.forEach((moonObj, id) => {
-      const paused = phase === 'moonFact' && selectedMoon === id;
-      if (!paused) {
-        moonObj.pivot.rotation.y += dt * moonObj.data.speed;
-      }
-      moonObj.mesh.rotation.y += dt * 0.25;
-
-      const isHighlighted = this.hoveredMoonId === id || selectedMoon === id;
-      const targetScale = isHighlighted ? 1.45 : 1.0;
-      moonObj.mesh.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.14);
-    });
-
-    this.surfaceMarkers.forEach((marker, index) => {
-      const targetScale = this.hoveredSurfaceMarkerIndex === index ? 1.35 : 1;
-      marker.scale.setScalar(marker.scale.x + (targetScale - marker.scale.x) * 0.18);
-    });
-
-    if (this.controls.enabled) {
+    if (this.controls && this.controls.enabled) {
       this.controls.update();
     }
 
@@ -567,26 +599,11 @@ export class MarsSceneController {
 
   disposeMarsModel(model) {
     model.traverse((object) => {
-      if (!object.isMesh) return;
-      object.geometry.dispose();
-      const materials = Array.isArray(object.material) ? object.material : [object.material];
-      materials.forEach((material) => {
-        Object.values(material).forEach((value) => {
-          if (value && value.isTexture) value.dispose();
-        });
-        material.dispose();
-      });
+      if (object.geometry) object.geometry.dispose();
+      if (object.material) {
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        materials.forEach((material) => material.dispose());
+      }
     });
-  }
-
-  dispose() {
-    this.disposed = true;
-    cancelAnimationFrame(this.rafId);
-    window.removeEventListener('resize', this.onResize);
-    this.canvas.removeEventListener('pointermove', this.onPointerMove);
-    this.canvas.removeEventListener('pointerdown', this.onPointerDown);
-    this.canvas.removeEventListener('pointerup', this.onPointerUp);
-    if (this.marsModel) this.disposeMarsModel(this.marsModel);
-    this.renderer.dispose();
   }
 }

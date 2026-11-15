@@ -1,6 +1,8 @@
 import { MOONS } from './moonFacts.js';
 import { introStore } from './store.js';
 import { MarsSceneController } from './scene.js';
+import { LANDING_SITE_DATA } from './siteData.js';
+import { fetchCuriositySiteData } from './nasaProxy.js';
 
 const CUT_AT_SECONDS = 7.0;
 
@@ -19,6 +21,14 @@ const dustFlashEl = document.getElementById('dust-flash');
 const enteringOverlayEl = document.getElementById('entering-overlay');
 const siteHandoffEl = document.getElementById('site-handoff');
 const srAnnouncerEl = document.getElementById('sr-announcer');
+const curiosityTooltipEl = document.getElementById('curiosity-tooltip');
+const curiosityNameEl = document.getElementById('curiosity-name');
+const curiosityDescriptionEl = document.getElementById('curiosity-description');
+const curiosityFactsEl = document.getElementById('curiosity-facts');
+const curiosityHazardsEl = document.getElementById('curiosity-hazards');
+const curiosityMineralsEl = document.getElementById('curiosity-minerals');
+const curiosityNasaImageEl = document.getElementById('curiosity-nasa-image');
+const curiosityNasaMetaEl = document.getElementById('curiosity-nasa-meta');
 
 // Moon Fact Card DOM
 const factCardEl = document.getElementById('moon-fact-card');
@@ -42,6 +52,7 @@ let sceneController = null;
 let edlSimRaf = null;
 let edlSimStart = null;
 let hasRealVideo = false;
+let hasFocusZoomedToCuriosity = false;
 
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -50,6 +61,104 @@ function announce(message) {
     srAnnouncerEl.textContent = message;
   }
 }
+
+async function loadCuriosityImageFromMarsTrek() {
+  try {
+    const res = await fetch('/api/mars-trek/capabilities');
+    if (!res.ok) {
+      throw new Error('Mars Trek capabilities endpoint is not configured');
+    }
+
+    const xml = await res.text();
+    const hasMarsTrekConfig = xml && xml.includes('GetCapabilities') && xml.length > 200;
+
+    if (!hasMarsTrekConfig) {
+      throw new Error('Mars Trek capabilities response is empty');
+    }
+
+    curiosityNasaMetaEl.textContent = 'Mars Trek tile layer detected. Waiting for exact endpoint configuration.';
+    curiosityNasaImageEl.src = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="820" height="420" viewBox="0 0 820 420">
+        <defs>
+          <linearGradient id="bg" x1="0" x2="1">
+            <stop offset="0%" stop-color="#1c150f"/>
+            <stop offset="50%" stop-color="#5a2d13"/>
+            <stop offset="100%" stop-color="#120d0a"/>
+          </linearGradient>
+        </defs>
+        <rect width="820" height="420" fill="url(#bg)"/>
+        <circle cx="610" cy="110" r="70" fill="#f7d1a2" opacity="0.2"/>
+        <path d="M0 320 C150 250, 220 310, 420 280 C570 250, 690 260, 820 220 L820 420 L0 420 Z" fill="#7c3518" opacity="0.8"/>
+        <text x="40" y="120" font-size="28" fill="#f5d1a1" font-family="Arial, sans-serif">Mars Trek tile layer available</text>
+        <text x="40" y="170" font-size="18" fill="#f5d1a1" opacity="0.8" font-family="Arial, sans-serif">Waiting for the exact NASA WMTS endpoint values</text>
+      </svg>
+    `);
+    curiosityNasaImageEl.alt = 'Mars Trek tile layer placeholder preview';
+  } catch (error) {
+    console.warn('Mars Trek layer not yet configured:', error);
+    curiosityNasaMetaEl.textContent = 'Mars Trek tile service is not configured yet; rover imagery will be used if available.';
+  }
+}
+
+async function populateCuriositySitePanel() {
+  const site = LANDING_SITE_DATA.curiosity;
+  curiosityNameEl.textContent = site.title;
+  curiosityDescriptionEl.textContent = site.description;
+
+  curiosityFactsEl.innerHTML = site.facts
+    .map((fact) => `<li>${fact}</li>`)
+    .join('');
+
+  curiosityHazardsEl.innerHTML = site.hazards
+    .map((hazard) => `<li>${hazard}</li>`)
+    .join('');
+
+  curiosityMineralsEl.innerHTML = site.minerals
+    .map((mineral) => `<li>${mineral}</li>`)
+    .join('');
+
+  await loadCuriosityImageFromMarsTrek();
+
+  try {
+    const nasaData = await fetchCuriositySiteData();
+    const photo = nasaData.photos?.[0];
+
+    if (photo && photo.img_src) {
+      curiosityNasaImageEl.src = photo.img_src;
+      curiosityNasaImageEl.alt = `${site.title} Curiosity image`;
+      curiosityNasaMetaEl.textContent = `Rover: ${photo.rover} • Camera: ${photo.camera} • Sol: ${photo.sol}`;
+    }
+  } catch (error) {
+    console.warn('Unable to fetch Curiosity API data:', error);
+    if (!curiosityNasaImageEl.src || curiosityNasaImageEl.src === window.location.href) {
+      curiosityNasaMetaEl.textContent = 'NASA imagery is unavailable while the secure proxy is offline.';
+    }
+  }
+}
+
+function showCuriosityHover() {
+  if (!curiosityTooltipEl) return;
+  curiosityTooltipEl.classList.remove('hidden');
+  populateCuriositySitePanel();
+}
+
+function hideCuriosityHover() {
+  if (!curiosityTooltipEl) return;
+  curiosityTooltipEl.classList.add('hidden');
+}
+
+const closeCuriosityTooltipBtn = document.getElementById('close-curiosity-tooltip');
+if (closeCuriosityTooltipBtn) {
+  closeCuriosityTooltipBtn.addEventListener('click', hideCuriosityHover);
+}
+
+const sceneHoverHandler = (siteId) => {
+  if (siteId === 'curiosity') {
+    showCuriosityHover();
+    return;
+  }
+  hideCuriosityHover();
+};
 
 function isWebGLAvailable() {
   try {
@@ -63,10 +172,15 @@ function isWebGLAvailable() {
   }
 }
 
-/**
- * Procedural EDL Descent Telemetry Simulation
- * Plays seamlessly if local /video/landing.mp4 & landing.webm have not yet been placed.
- */
+function activateCuriositySite() {
+  if (sceneController) {
+    sceneController.zoomToLandingSite();
+  }
+  showCuriosityHover();
+  hasFocusZoomedToCuriosity = true;
+  announce('Curiosity landing site focused. Gale Crater is now in view.');
+}
+
 function startEdlFallbackAnimation() {
   stopEdlFallbackAnimation();
   edlCanvasEl.classList.remove('hidden');
@@ -83,7 +197,6 @@ function startEdlFallbackAnimation() {
     const w = (edlCanvasEl.width = window.innerWidth);
     const h = (edlCanvasEl.height = window.innerHeight);
 
-    // Martian atmospheric descent gradient shifting from upper haze to dusty surface
     const grad = ctx.createRadialGradient(w * 0.5, h * 0.62, 20, w * 0.5, h * 0.5, Math.max(w, h) * 0.75);
     grad.addColorStop(0, `rgba(${193 + progress * 45}, ${84 + progress * 35}, 34, 1)`);
     grad.addColorStop(0.55, '#4a1909');
@@ -91,7 +204,6 @@ function startEdlFallbackAnimation() {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
-    // Horizon & terrain scanlines
     const horizonY = h * (0.42 + progress * 0.24);
     ctx.strokeStyle = 'rgba(255, 195, 150, 0.24)';
     ctx.lineWidth = 1;
@@ -103,7 +215,6 @@ function startEdlFallbackAnimation() {
       ctx.stroke();
     }
 
-    // Center descent reticle
     const cx = w * 0.5;
     const cy = h * 0.5;
     const radius = 90 - progress * 32;
@@ -113,7 +224,6 @@ function startEdlFallbackAnimation() {
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Update EDL HUD readout
     const altKm = Math.max(0.02, (11.2 * (1 - progress)).toFixed(2));
     const stage =
       elapsed < 2.5
@@ -144,7 +254,6 @@ function stopEdlFallbackAnimation() {
 function triggerDustFlash() {
   dustFlashEl.classList.remove('hidden');
   dustFlashEl.style.animation = 'none';
-  // Force reflow to restart CSS keyframe animation
   void dustFlashEl.offsetWidth;
   dustFlashEl.style.animation = '';
   setTimeout(() => {
@@ -177,7 +286,6 @@ function renderMoonFactCard(moonId) {
 function handleStateChange(state, prevState) {
   const { phase, selectedMoon } = state;
 
-  // Update phase indicator badge
   const phaseLabels = {
     video: 'EDL TELEMETRY',
     transition: 'ORBITAL INSERTION',
@@ -193,7 +301,6 @@ function handleStateChange(state, prevState) {
     factCardEl.classList.add('hidden');
     enteringOverlayEl.classList.add('hidden');
     siteHandoffEl.classList.add('hidden');
-
     if (hasRealVideo) {
       landingVideoEl.currentTime = 0;
       landingVideoEl.play().catch(() => {
@@ -279,7 +386,6 @@ function initVideoHandlers() {
   });
 
   landingVideoEl.addEventListener('error', () => {
-    // Local video path not yet added — seamlessly run EDL simulation
     hasRealVideo = false;
     landingVideoEl.classList.add('hidden');
     if (introStore.getState().phase === 'video') {
@@ -287,7 +393,6 @@ function initVideoHandlers() {
     }
   });
 
-  // Attempt autoplay and expose Play button if browser blocks it
   const playPromise = landingVideoEl.play();
   if (playPromise !== undefined) {
     playPromise.catch(() => {
@@ -321,11 +426,13 @@ function initUIEvents() {
     renderMoonFactCard(selectedMoon);
   });
 
-  // Keyboard navigation & Escape handler
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && introStore.getState().phase === 'moonFact') {
       currentFactIndex = 0;
       introStore.selectMoon(null);
+    }
+    if (e.key === 'Escape' && !curiosityTooltipEl.classList.contains('hidden')) {
+      hideCuriosityHover();
     }
   });
 
@@ -347,10 +454,12 @@ function initUIEvents() {
       videoLayerEl.classList.add('hidden');
       if (sceneController) sceneController.setOrbitImmediate();
     }
+    hideCuriosityHover();
     introStore.setPhase('entering');
   });
 
   btnReplayIntro.addEventListener('click', () => {
+    hideCuriosityHover();
     if (sceneController) {
       sceneController.resetToStart();
     }
@@ -358,11 +467,11 @@ function initUIEvents() {
   });
 
   btnLaunchRoute.addEventListener('click', () => {
-    // Navigate to surface map route specified in ARES technical doc
     window.location.assign('/site/gale');
   });
 
   btnReturnOrbit.addEventListener('click', () => {
+    hideCuriosityHover();
     siteHandoffEl.classList.add('hidden');
     if (sceneController) {
       sceneController.setOrbitImmediate();
@@ -370,7 +479,6 @@ function initUIEvents() {
     introStore.setPhase('orbit');
   });
 
-  // Fallback page buttons
   document.querySelectorAll('[data-moon]').forEach((btn) => {
     if (btn !== btnMoonPhobos && btn !== btnMoonDeimos) {
       btn.addEventListener('click', () => {
@@ -382,6 +490,7 @@ function initUIEvents() {
   const fallbackEnterBtn = document.getElementById('fallback-enter-btn');
   if (fallbackEnterBtn) {
     fallbackEnterBtn.addEventListener('click', () => {
+      hideCuriosityHover();
       siteHandoffEl.classList.remove('hidden');
     });
   }
@@ -395,13 +504,12 @@ function bootstrap() {
     sceneController = new MarsSceneController(canvasEl, () => {
       enteringOverlayEl.classList.add('hidden');
       siteHandoffEl.classList.remove('hidden');
-    });
+    }, sceneHoverHandler, activateCuriositySite);
   } else {
     canvasEl.classList.add('hidden');
     webglFallbackEl.classList.remove('hidden');
   }
 
-  // Respect prefers-reduced-motion or repeat visitor skip
   const hasVisited = localStorage.getItem('ares_intro_seen') === '1';
   if (reduceMotion) {
     videoLayerEl.classList.add('hidden');
