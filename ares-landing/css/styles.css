@@ -817,9 +817,66 @@ body {
 }
 
 .drawer-waypoint-phase {
+
   color: var(--text-muted);
   font: 400 0.57rem var(--font-mono);
   text-transform: uppercase;
+}
+
+/* POI Leaflet Popup */
+.leaflet-popup-content-wrapper {
+  background: #10141b;
+  border: 1px solid var(--hud-border-strong);
+  border-radius: 4px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8);
+}
+
+.leaflet-popup-content {
+  margin: 0;
+  color: var(--mars-cream);
+  font-size: 0.85rem;
+}
+
+.leaflet-popup-tip {
+  background: #10141b;
+  border: 1px solid var(--hud-border-strong);
+}
+
+.poi-popup-sol {
+  color: var(--mars-amber);
+  font: 500 0.7rem var(--font-mono);
+  letter-spacing: 0.1em;
+  margin-bottom: 0.5rem;
+}
+
+.poi-popup-title {
+  color: var(--mars-cream);
+  font: 600 1.1rem var(--font-display);
+  margin: 0 0 0.5rem 0;
+}
+
+.poi-popup-coords {
+  color: var(--text-muted);
+  font: 500 0.7rem var(--font-mono);
+  margin-bottom: 0.5rem;
+}
+
+.poi-popup-elev {
+  color: var(--mars-cream);
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+}
+
+.poi-popup-inst {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.poi-popup-summary {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.8rem;
+  line-height: 1.5;
 }
 
 /* WebGL Fallback */
