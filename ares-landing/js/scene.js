@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { gsap } from 'gsap';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MOONS } from './moonFacts.js';
@@ -11,14 +12,17 @@ const DIVE_POS = { x: 0, y: 0.1, z: 1.08 };
 const MARS_AXIAL_TILT = (25.19 * Math.PI) / 180;
 
 export class MarsSceneController {
-  constructor(canvas, onDiveComplete) {
+  constructor(canvas, onDiveComplete, surfaceMarkerTooltip) {
     this.canvas = canvas;
     this.onDiveComplete = onDiveComplete;
     this.isMobile = window.innerWidth < 768;
     this.marsHovered = false;
     this.hoveredMoonId = null;
     this.hoveredSurfaceMarkerIndex = null;
-    this.surfaceMarkerTooltip = document.getElementById('surface-marker-tooltip');
+    this.surfaceMarkerTooltip = surfaceMarkerTooltip;
+    if (!this.surfaceMarkerTooltip) {
+      throw new Error('The Mars surface marker tooltip is unavailable.');
+    }
     this.surfaceMarkerTooltipKicker = this.surfaceMarkerTooltip.querySelector('.fact-kicker');
     this.surfaceMarkerTooltipTitle = this.surfaceMarkerTooltip.querySelector('h2');
     this.surfaceMarkerTooltipDetails = this.surfaceMarkerTooltip.querySelector('p');
@@ -601,8 +605,42 @@ export class MarsSceneController {
       if (object.geometry) object.geometry.dispose();
       if (object.material) {
         const materials = Array.isArray(object.material) ? object.material : [object.material];
-        materials.forEach((material) => material.dispose());
+        materials.forEach((material) => this.disposeMaterial(material));
       }
     });
+  }
+
+  disposeMaterial(material) {
+    Object.values(material).forEach((value) => {
+      if (value && value.isTexture) value.dispose();
+    });
+    material.dispose();
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    cancelAnimationFrame(this.rafId);
+    window.removeEventListener('resize', this.onResize);
+    window.removeEventListener('pointermove', this.onPointerMove);
+    window.removeEventListener('pointerdown', this.onPointerDown);
+    window.removeEventListener('pointerup', this.onPointerUp);
+    gsap.killTweensOf(this.camera.position);
+    gsap.killTweensOf(this.starMaterial);
+    if (this.atmosphereMaterial) {
+      gsap.killTweensOf(this.atmosphereMaterial.uniforms.uOpacity);
+    }
+    this.controls.dispose();
+    this.scene.traverse((object) => {
+      if (object.geometry) object.geometry.dispose();
+      if (object.material) {
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        materials.forEach((material) => this.disposeMaterial(material));
+      }
+    });
+    this.renderer.dispose();
+    this.surfaceMarkerTooltip.classList.add('hidden');
+    this.surfaceMarkerTooltip.setAttribute('aria-hidden', 'true');
+    document.body.style.cursor = 'auto';
   }
 }

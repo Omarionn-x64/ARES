@@ -1,19 +1,17 @@
+import L from 'leaflet';
 import { MARS_SITES, NASA_TREK_TILES } from './siteData.js';
 
 const MOLA_OPACITY = 0.65;
 
 export class MarsSurfaceMapController {
-  constructor(containerId) {
-    if (!window.L) {
-      throw new Error('Leaflet did not load; Mars surface maps are unavailable.');
+  constructor(container, onStateChange) {
+    if (!container) {
+      throw new Error('The Mars map container is unavailable.');
     }
 
-    this.L = window.L;
-    this.view = document.getElementById('mars-trek-view');
-    this.mapStatus = document.getElementById('trek-map-status');
-    this.molaButton = document.getElementById('btn-toggle-mola');
-    this.localMosaicButton = document.getElementById('btn-toggle-local-mosaic');
-    this.map = this.L.map(containerId, {
+    this.L = L;
+    this.onStateChange = onStateChange;
+    this.map = this.L.map(container, {
       crs: this.L.CRS.EPSG4326,
       minZoom: 0,
       maxZoom: 18,
@@ -55,6 +53,7 @@ export class MarsSurfaceMapController {
     this.localLayer = null;
     this.site = null;
     this.waypointMarkers = [];
+    this.waypointIndex = 0;
     this.molaEnabled = false;
     this.localMosaicEnabled = false;
     this.localTileErrorReported = false;
@@ -67,15 +66,14 @@ export class MarsSurfaceMapController {
   }
 
   open(siteId) {
-    this.view.classList.remove('hidden');
-    this.view.classList.add('is-open');
     this.loadSite(siteId);
     requestAnimationFrame(() => this.map.invalidateSize({ pan: false }));
   }
 
-  close() {
-    this.view.classList.remove('is-open');
-    this.view.classList.add('hidden');
+  destroy() {
+    window.clearTimeout(this.localLayerUpdateTimer);
+    window.clearTimeout(this.routeLayerUpdateTimer);
+    this.map.remove();
   }
 
   loadSite(siteId) {
@@ -85,6 +83,7 @@ export class MarsSurfaceMapController {
     }
 
     this.site = site;
+    this.waypointIndex = 0;
     this.map.stop();
     this.clearStatus();
     this.removeOptionalLayers();
@@ -92,20 +91,9 @@ export class MarsSurfaceMapController {
     this.routeLayerFailed = false;
     this.map.setView(site.center, site.zoom, { animate: false });
 
-    document.getElementById('trek-kicker').textContent = site.kicker;
-    document.getElementById('trek-site-title').textContent = site.title;
-    document.querySelectorAll('.trek-site-switcher [data-site]').forEach((button) => {
-      const active = button.dataset.site === site.id;
-      button.classList.toggle('is-active', active);
-      button.setAttribute('aria-pressed', String(active));
-    });
-
     this.renderRoute();
     this.renderWaypoints();
     this.prepareLocalLayer();
-    document.getElementById('drawer-waypoint-note').textContent = site.traverseLayerName
-      ? 'NASA traverse overlay shown where available. POIs are selected campaign markers, not every drive endpoint; some mark a broader area rather than an exact stop. Elevations are nearest-cell MOLA DEM samples (~463 m at the equator).'
-      : 'Numbered markers show mission phases at the lander, not a rover traverse. Elevations are nearest-cell MOLA DEM samples (~463 m at the equator).';
     this.syncToolbar();
     this.selectWaypoint(0, false);
   }
@@ -155,7 +143,6 @@ export class MarsSurfaceMapController {
       this.routeLayer = null;
     }
     window.clearTimeout(this.routeLayerUpdateTimer);
-    document.getElementById('drawer-waypoint-list').replaceChildren();
   }
 
   prepareLocalLayer() {
@@ -306,7 +293,6 @@ export class MarsSurfaceMapController {
   }
 
   renderWaypoints() {
-    const waypointList = document.getElementById('drawer-waypoint-list');
     this.site.waypoints.forEach((waypoint, index) => {
       const marker = this.L.marker(waypoint.coordinates, {
         alt: waypoint.title,
@@ -318,21 +304,6 @@ export class MarsSurfaceMapController {
       marker.bindTooltip(waypoint.title, { direction: 'top', offset: [0, -14] });
       marker.on('click', () => this.selectWaypoint(index, true));
       this.waypointMarkers.push(marker);
-
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'drawer-waypoint-button';
-      button.setAttribute('aria-pressed', 'false');
-      button.addEventListener('click', () => this.selectWaypoint(index, true));
-
-      const title = document.createElement('span');
-      title.className = 'drawer-waypoint-title';
-      title.textContent = waypoint.title;
-      const phase = document.createElement('span');
-      phase.className = 'drawer-waypoint-phase';
-      phase.textContent = `SOL ${waypoint.sol} · ${waypoint.date} · ${waypoint.phase}`;
-      button.append(title, phase);
-      waypointList.append(button);
     });
   }
 
@@ -350,24 +321,16 @@ export class MarsSurfaceMapController {
     const waypoint = this.site.waypoints[index];
     if (!waypoint) return;
 
+    this.waypointIndex = index;
     this.waypointMarkers.forEach((marker, markerIndex) => {
       marker.setIcon(this.createPinIcon(markerIndex, markerIndex === index));
     });
-    document.querySelectorAll('.drawer-waypoint-button').forEach((button, buttonIndex) => {
-      const active = buttonIndex === index;
-      button.classList.toggle('is-active', active);
-      button.setAttribute('aria-pressed', String(active));
+    this.onStateChange({
+      site: this.site,
+      waypointIndex: index,
+      molaEnabled: this.molaEnabled,
+      localMosaicEnabled: this.localMosaicEnabled,
     });
-
-    document.getElementById('drawer-sol').textContent =
-      `SOL ${waypoint.sol} · ${waypoint.date} · ${waypoint.phase}`;
-    document.getElementById('drawer-title').textContent = waypoint.title;
-    document.getElementById('drawer-coords').textContent =
-      this.formatCoordinates(waypoint.coordinates);
-    document.getElementById('drawer-elev').textContent = waypoint.elevation;
-    document.getElementById('drawer-geology').textContent = waypoint.geology;
-    document.getElementById('drawer-inst').textContent = waypoint.instruments.join(' · ');
-    document.getElementById('drawer-summary').textContent = waypoint.summary;
 
     if (flyTo) {
       this.map.flyTo(waypoint.coordinates, Math.min(17, this.site.zoom + 2), {
@@ -376,28 +339,23 @@ export class MarsSurfaceMapController {
     }
   }
 
-  formatCoordinates([latitude, longitude]) {
-    const latitudeHemisphere = latitude < 0 ? 'S' : 'N';
-    const longitudeHemisphere = longitude < 0 ? 'W' : 'E';
-    return `${Math.abs(latitude).toFixed(4)}° ${latitudeHemisphere}, ${Math.abs(longitude).toFixed(4)}° ${longitudeHemisphere}`;
-  }
-
   syncToolbar() {
-    this.molaButton.textContent = `MOLA Elevation: ${this.molaEnabled ? 'ON' : 'OFF'}`;
-    this.molaButton.setAttribute('aria-pressed', String(this.molaEnabled));
-    this.localMosaicButton.classList.toggle('hidden', !this.site.localTileLayer);
-    this.localMosaicButton.textContent =
-      `Local Mosaic: ${this.localMosaicEnabled ? 'ON' : 'OFF'}`;
-    this.localMosaicButton.setAttribute('aria-pressed', String(this.localMosaicEnabled));
+    this.onStateChange({
+      status: this.status || '',
+      site: this.site,
+      waypointIndex: this.waypointIndex,
+      molaEnabled: this.molaEnabled,
+      localMosaicEnabled: this.localMosaicEnabled,
+    });
   }
 
   showStatus(message) {
-    this.mapStatus.textContent = message;
-    this.mapStatus.classList.remove('hidden');
+    this.status = message;
+    this.onStateChange({ status: message });
   }
 
   clearStatus() {
-    this.mapStatus.textContent = '';
-    this.mapStatus.classList.add('hidden');
+    this.status = '';
+    this.onStateChange({ status: '' });
   }
 }
