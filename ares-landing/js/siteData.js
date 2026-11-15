@@ -8,9 +8,9 @@ export const NASA_TREK_TILES = {
   traverseMapServer:
     'https://trek.nasa.gov/mars/trekarcgis/rest/services/{layer}/MapServer/export',
   heatMap:
-    'https://trek.nasa.gov/tiles/Mars/EQ/Mars_MO_THEMIS-IR-Day_mosaic_global_100m_v12_clon0_ly/1.0.0//default/default028mm/{z}/{y}/{x}.png',
+    'https://api.nasa.gov/mars-wmts/catalog/Mars_MO_THEMIS-IR-Day_mosaic_global_100m_v12_clon0_ly/1.0.0//default/default028mm/{z}/{y}/{x}.jpg',
   weatherMap:
-    'https://trek.nasa.gov/tiles/Mars/EQ/Mars_MGS_TES_Albedo_mosaic_global_7410m/1.0.0//default/default028mm/{z}/{y}/{x}.png',
+    'https://api.nasa.gov/mars-wmts/catalog/Mars_MGS_TES_Albedo_mosaic_global_7410m/1.0.0//default/default028mm/{z}/{y}/{x}.png',
 };
 
 export const MARS_SITES = {

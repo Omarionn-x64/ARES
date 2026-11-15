@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MOONS } from '../js/moonFacts.js';
 import { MarsSceneController } from '../js/scene.js';
 import { MarsSurfaceMapController } from '../js/marsMap.js';
-import { MARS_SITES } from '../js/siteData.js';
 import SiteChooser from './intro/SiteChooser';
 import { formatSiteCoordinates, getSiteForPath, LANDING_SITES } from './intro/sites';
 import { useIntroStore } from './intro/store';
@@ -24,6 +23,8 @@ const DEFAULT_MAP_STATE = {
   waypointIndex: 0,
   molaEnabled: false,
   localMosaicEnabled: false,
+  heatEnabled: false,
+  weatherEnabled: false,
 };
 function isWebGLAvailable() {
   try {
@@ -688,6 +689,22 @@ function App() {
               onClick={() => mapControllerRef.current?.toggleMola()}
             >
               MOLA Elevation: {mapState.molaEnabled ? 'ON' : 'OFF'}
+            </button>
+            <button
+              type="button"
+              className="trek-toolbar-button"
+              aria-pressed={mapState.heatEnabled}
+              onClick={() => mapControllerRef.current?.toggleHeat()}
+            >
+              Heat Map: {mapState.heatEnabled ? 'ON' : 'OFF'}
+            </button>
+            <button
+              type="button"
+              className="trek-toolbar-button"
+              aria-pressed={mapState.weatherEnabled}
+              onClick={() => mapControllerRef.current?.toggleWeather()}
+            >
+              Weather Map: {mapState.weatherEnabled ? 'ON' : 'OFF'}
             </button>
             <button
               type="button"

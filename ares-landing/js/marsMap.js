@@ -9,21 +9,10 @@ export class MarsSurfaceMapController {
       throw new Error('The Mars map container is unavailable.');
     }
 
-<<<<<<< HEAD
     this.L = L;
-    this.onStateChange = onStateChange;
+    this.onStateChange = onStateChange || (() => {});
+    this.status = '';
     this.map = this.L.map(container, {
-=======
-    this.L = window.L;
-    this.view = document.getElementById('mars-trek-view');
-    this.mapStatus = document.getElementById('trek-map-status');
-    this.molaButton = document.getElementById('btn-toggle-mola');
-    this.localMosaicButton = document.getElementById('btn-toggle-local-mosaic');
-    this.heatButton = document.getElementById('btn-toggle-heat');
-    this.weatherButton = document.getElementById('btn-toggle-weather');
-
-    this.map = this.L.map(containerId, {
->>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
       crs: this.L.CRS.EPSG4326,
       minZoom: 0,
       maxZoom: 18,
@@ -140,18 +129,6 @@ export class MarsSurfaceMapController {
     this.routeLayerFailed = false;
     this.map.setView(site.center, site.zoom, { animate: false });
 
-<<<<<<< HEAD
-    this.renderRoute();
-=======
-    document.getElementById('trek-kicker').textContent = site.kicker;
-    document.getElementById('trek-site-title').textContent = site.title;
-    document.querySelectorAll('.trek-site-switcher [data-site]').forEach((button) => {
-      const active = button.dataset.site === site.id;
-      button.classList.toggle('is-active', active);
-      button.setAttribute('aria-pressed', String(active));
-    });
-
->>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
     this.renderWaypoints();
     this.prepareLocalLayer();
     this.syncToolbar();
@@ -385,11 +362,7 @@ export class MarsSurfaceMapController {
   }
 
   renderWaypoints() {
-<<<<<<< HEAD
-=======
-    const waypointList = document.getElementById('drawer-waypoint-list');
     const coordinates = [];
->>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
     this.site.waypoints.forEach((waypoint, index) => {
       const marker = this.L.marker(waypoint.coordinates, {
         alt: waypoint.title,
@@ -401,25 +374,7 @@ export class MarsSurfaceMapController {
       marker.bindTooltip(waypoint.title, { direction: 'top', offset: [0, -14] });
       marker.on('click', () => this.selectWaypoint(index, true));
       this.waypointMarkers.push(marker);
-<<<<<<< HEAD
-=======
       coordinates.push(waypoint.coordinates);
-
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'drawer-waypoint-button';
-      button.setAttribute('aria-pressed', 'false');
-      button.addEventListener('click', () => this.selectWaypoint(index, true));
-
-      const title = document.createElement('span');
-      title.className = 'drawer-waypoint-title';
-      title.textContent = waypoint.title;
-      const phase = document.createElement('span');
-      phase.className = 'drawer-waypoint-phase';
-      phase.textContent = `SOL ${waypoint.sol} · ${waypoint.date} · ${waypoint.phase}`;
-      button.append(title, phase);
-      waypointList.append(button);
->>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
     });
 
     // Draw red dashed connection line between all POIs
@@ -453,24 +408,7 @@ export class MarsSurfaceMapController {
     this.waypointMarkers.forEach((marker, markerIndex) => {
       marker.setIcon(this.createPinIcon(markerIndex, markerIndex === index));
     });
-    this.onStateChange({
-      site: this.site,
-      waypointIndex: index,
-      molaEnabled: this.molaEnabled,
-      localMosaicEnabled: this.localMosaicEnabled,
-    });
-
-<<<<<<< HEAD
-=======
-    document.getElementById('drawer-sol').textContent =
-      `SOL ${waypoint.sol} · ${waypoint.date} · ${waypoint.phase}`;
-    document.getElementById('drawer-title').textContent = waypoint.title;
-    document.getElementById('drawer-coords').textContent =
-      this.formatCoordinates(waypoint.coordinates);
-    document.getElementById('drawer-elev').textContent = waypoint.elevation;
-    document.getElementById('drawer-geology').textContent = waypoint.geology;
-    document.getElementById('drawer-inst').textContent = waypoint.instruments.join(' · ');
-    document.getElementById('drawer-summary').textContent = waypoint.summary;
+    this.syncToolbar();
 
     // Open POI popup on the map at the marker location
     const popupContent = `
@@ -486,7 +424,6 @@ export class MarsSurfaceMapController {
     const marker = this.waypointMarkers[index];
     marker.bindPopup(popupContent, { className: 'poi-leaflet-popup', offset: [0, -18] }).openPopup();
 
->>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
     if (flyTo) {
       this.map.flyTo(waypoint.coordinates, Math.min(17, this.site.zoom + 2), {
         duration: 0.8,
@@ -494,27 +431,22 @@ export class MarsSurfaceMapController {
     }
   }
 
+  formatCoordinates([latitude, longitude]) {
+    const latitudeHemisphere = latitude < 0 ? 'S' : 'N';
+    const longitudeHemisphere = longitude < 0 ? 'W' : 'E';
+    return `${Math.abs(latitude).toFixed(4)}° ${latitudeHemisphere}, ${Math.abs(longitude).toFixed(4)}° ${longitudeHemisphere}`;
+  }
+
   syncToolbar() {
-<<<<<<< HEAD
     this.onStateChange({
       status: this.status || '',
       site: this.site,
       waypointIndex: this.waypointIndex,
       molaEnabled: this.molaEnabled,
       localMosaicEnabled: this.localMosaicEnabled,
+      heatEnabled: this.heatEnabled,
+      weatherEnabled: this.weatherEnabled,
     });
-=======
-    this.molaButton.textContent = `MOLA Elevation: ${this.molaEnabled ? 'ON' : 'OFF'}`;
-    this.molaButton.setAttribute('aria-pressed', String(this.molaEnabled));
-    this.localMosaicButton.classList.toggle('hidden', !this.site.localTileLayer);
-    this.localMosaicButton.textContent =
-      `Local Mosaic: ${this.localMosaicEnabled ? 'ON' : 'OFF'}`;
-    this.localMosaicButton.setAttribute('aria-pressed', String(this.localMosaicEnabled));
-    this.heatButton.textContent = `Heat Map: ${this.heatEnabled ? 'ON' : 'OFF'}`;
-    this.heatButton.setAttribute('aria-pressed', String(this.heatEnabled));
-    this.weatherButton.textContent = `Weather Map: ${this.weatherEnabled ? 'ON' : 'OFF'}`;
-    this.weatherButton.setAttribute('aria-pressed', String(this.weatherEnabled));
->>>>>>> 972d8fd0c5a8ef3d5ba4f7cc042da165300330fa
   }
 
   showStatus(message) {
