@@ -51,6 +51,7 @@ export class MarsSurfaceMapController {
 
     this.markersLayer = this.L.layerGroup().addTo(this.map);
     this.routeLayer = null;
+    this.routeLayerFailed = false;
     this.localLayer = null;
     this.site = null;
     this.waypointMarkers = [];
@@ -59,7 +60,10 @@ export class MarsSurfaceMapController {
     this.localTileErrorReported = false;
 
     this.L.control.scale({ imperial: false, maxWidth: 140 }).addTo(this.map);
-    this.map.on('moveend resize', () => this.updateLocalLayer());
+    this.map.on('moveend resize', () => {
+      this.updateLocalLayer();
+      this.updateRouteLayer();
+    });
   }
 
   open(siteId) {
@@ -85,6 +89,7 @@ export class MarsSurfaceMapController {
     this.clearStatus();
     this.removeOptionalLayers();
     this.clearSiteLayers();
+    this.routeLayerFailed = false;
     this.map.setView(site.center, site.zoom, { animate: false });
 
     document.getElementById('trek-kicker').textContent = site.kicker;
@@ -98,6 +103,9 @@ export class MarsSurfaceMapController {
     this.renderRoute();
     this.renderWaypoints();
     this.prepareLocalLayer();
+    document.getElementById('drawer-waypoint-note').textContent = site.traverseLayerName
+      ? 'NASA traverse overlay shown where available. POIs are selected campaign markers, not every drive endpoint; some mark a broader area rather than an exact stop. Elevations are nearest-cell MOLA DEM samples (~463 m at the equator).'
+      : 'Numbered markers show mission phases at the lander, not a rover traverse. Elevations are nearest-cell MOLA DEM samples (~463 m at the equator).';
     this.syncToolbar();
     this.selectWaypoint(0, false);
   }
@@ -146,6 +154,7 @@ export class MarsSurfaceMapController {
       this.map.removeLayer(this.routeLayer);
       this.routeLayer = null;
     }
+    window.clearTimeout(this.routeLayerUpdateTimer);
     document.getElementById('drawer-waypoint-list').replaceChildren();
   }
 
@@ -226,18 +235,74 @@ export class MarsSurfaceMapController {
   }
 
   renderRoute() {
-    if (this.site.waypoints.length < 2) return;
-    this.routeLayer = this.L.polyline(
-      this.site.waypoints.map((waypoint) => waypoint.coordinates),
-      {
-        color: '#ff8c5a',
-        dashArray: '9 7',
-        lineCap: 'round',
-        lineJoin: 'round',
-        opacity: 0.95,
-        weight: 4,
+    if (!this.site.traverseLayerName) return;
+
+    const emptyImage = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+    const layer = this.L.imageOverlay(
+      emptyImage,
+      this.L.latLngBounds([[-90, -180], [90, 180]]),
+      { opacity: 0.95, interactive: false }
+    );
+    const site = this.site;
+    this.routeLayer = layer;
+    layer.on('error', () => {
+      if (this.routeLayer !== layer || this.site !== site) return;
+      this.routeLayerFailed = true;
+      this.map.removeLayer(layer);
+      this.showStatus(
+        'The NASA traverse overlay is unavailable. The selected mission POIs remain available.'
+      );
+    });
+    layer.addTo(this.map);
+    this.updateRouteLayer();
+  }
+
+  updateRouteLayer() {
+    if (!this.routeLayer || !this.site || this.routeLayerFailed) return;
+
+    window.clearTimeout(this.routeLayerUpdateTimer);
+    const layer = this.routeLayer;
+    const site = this.site;
+    this.routeLayerUpdateTimer = window.setTimeout(() => {
+      if (
+        this.routeLayer !== layer ||
+        this.site !== site ||
+        this.routeLayerFailed
+      ) {
+        return;
       }
-    ).addTo(this.map);
+      this.refreshRouteLayer(layer, site);
+    }, 150);
+  }
+
+  refreshRouteLayer(layer, site) {
+    const bounds = this.map.getBounds();
+    const size = this.map.getSize();
+    if (!size.x || !size.y) return;
+
+    const southwest = bounds.getSouthWest();
+    const northeast = bounds.getNorthEast();
+    const params = new URLSearchParams({
+      bbox: [
+        southwest.lng,
+        southwest.lat,
+        northeast.lng,
+        northeast.lat,
+      ].join(','),
+      bboxSR: '104905',
+      imageSR: '104905',
+      size: `${Math.min(2048, Math.ceil(size.x))},${Math.min(2048, Math.ceil(size.y))}`,
+      format: 'png32',
+      transparent: 'true',
+      f: 'image',
+    });
+    const url = NASA_TREK_TILES.traverseMapServer.replace(
+      '{layer}',
+      encodeURIComponent(site.traverseLayerName)
+    );
+
+    layer.setBounds(bounds);
+    layer.setUrl(`${url}?${params}`);
   }
 
   renderWaypoints() {
@@ -265,7 +330,7 @@ export class MarsSurfaceMapController {
       title.textContent = waypoint.title;
       const phase = document.createElement('span');
       phase.className = 'drawer-waypoint-phase';
-      phase.textContent = `SOL ${waypoint.sol} · ${waypoint.phase}`;
+      phase.textContent = `SOL ${waypoint.sol} · ${waypoint.date} · ${waypoint.phase}`;
       button.append(title, phase);
       waypointList.append(button);
     });
@@ -295,7 +360,7 @@ export class MarsSurfaceMapController {
     });
 
     document.getElementById('drawer-sol').textContent =
-      `SOL ${waypoint.sol} · ${waypoint.phase}`;
+      `SOL ${waypoint.sol} · ${waypoint.date} · ${waypoint.phase}`;
     document.getElementById('drawer-title').textContent = waypoint.title;
     document.getElementById('drawer-coords').textContent =
       this.formatCoordinates(waypoint.coordinates);

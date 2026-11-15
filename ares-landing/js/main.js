@@ -22,7 +22,6 @@ const enteringOverlayEl = document.getElementById('entering-overlay');
 const diveLabelEl = enteringOverlayEl.querySelector('.dive-label');
 const diveTargetEl = enteringOverlayEl.querySelector('.dive-target');
 const diveDetailsEl = document.getElementById('dive-details');
-const siteHandoffEl = document.getElementById('site-handoff');
 const marsTrekViewEl = document.getElementById('mars-trek-view');
 const trekMapStatusEl = document.getElementById('trek-map-status');
 const srAnnouncerEl = document.getElementById('sr-announcer');
@@ -41,8 +40,6 @@ const btnReplayIntro = document.getElementById('btn-replay-intro');
 const btnMoonPhobos = document.getElementById('btn-moon-phobos');
 const btnMoonDeimos = document.getElementById('btn-moon-deimos');
 const btnEnterMars = document.getElementById('btn-enter-mars');
-const btnLaunchRoute = document.getElementById('btn-launch-route');
-const btnReturnOrbit = document.getElementById('btn-return-orbit');
 const btnCloseTrek = document.getElementById('btn-close-trek');
 const btnToggleMola = document.getElementById('btn-toggle-mola');
 const btnToggleLocalMosaic = document.getElementById('btn-toggle-local-mosaic');
@@ -214,7 +211,6 @@ function handleStateChange(state, prevState) {
     orbitOverlayEl.classList.add('hidden');
     factCardEl.classList.add('hidden');
     enteringOverlayEl.classList.add('hidden');
-    siteHandoffEl.classList.add('hidden');
     closeMarsTrekView();
     if (hasRealVideo) {
       landingVideoEl.currentTime = 0;
@@ -248,7 +244,6 @@ function handleStateChange(state, prevState) {
     orbitOverlayEl.classList.remove('hidden');
     factCardEl.classList.add('hidden');
     enteringOverlayEl.classList.add('hidden');
-    siteHandoffEl.classList.add('hidden');
     closeMarsTrekView();
     btnMoonPhobos.classList.remove('active');
     btnMoonDeimos.classList.remove('active');
@@ -268,7 +263,6 @@ function handleStateChange(state, prevState) {
   if (phase === 'entering') {
     const site = MARS_SITES[descentTarget] || MARS_SITES.gale;
     closeMarsTrekView();
-    siteHandoffEl.classList.add('hidden');
     diveLabelEl.textContent = `${site.id.toUpperCase()} LANDING SITE`;
     diveTargetEl.textContent = `TARGET: ${site.title.toUpperCase()}`;
     diveDetailsEl.textContent = site.waypoints[0].summary;
@@ -393,19 +387,6 @@ function initUIEvents() {
     introStore.setPhase('video');
   });
 
-  btnLaunchRoute.addEventListener('click', () => {
-    window.location.assign('/site/gale');
-  });
-
-  btnReturnOrbit.addEventListener('click', () => {
-    siteHandoffEl.classList.add('hidden');
-    closeMarsTrekView();
-    if (sceneController) {
-      sceneController.setOrbitImmediate();
-    }
-    introStore.setPhase('orbit');
-  });
-
   btnCloseTrek.addEventListener('click', () => {
     closeMarsTrekView();
     if (sceneController) {
@@ -453,7 +434,6 @@ function bootstrap() {
   if (isWebGLAvailable()) {
     sceneController = new MarsSceneController(canvasEl, () => {
       enteringOverlayEl.classList.add('hidden');
-      siteHandoffEl.classList.add('hidden');
       openMarsTrekView(introStore.getState().descentTarget || 'perseverance');
     });
   } else {

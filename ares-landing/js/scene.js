@@ -221,7 +221,7 @@ export class MarsSceneController {
       const normal = new THREE.Vector3(
         Math.cos(latRad) * Math.cos(lonRad),
         Math.sin(latRad),
-        Math.cos(latRad) * Math.sin(lonRad)
+        -Math.cos(latRad) * Math.sin(lonRad)
       ).normalize();
 
       marker.position.copy(normal).multiplyScalar(radius);
