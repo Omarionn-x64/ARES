@@ -9,9 +9,33 @@ const ORBIT_POS = { x: 0, y: 0.9, z: 5.2 };
 const DIVE_POS = { x: 0, y: 0.1, z: 1.08 };
 const MARS_AXIAL_TILT = (25.19 * Math.PI) / 180;
 const SURFACE_MARKERS = [
-  { lat: 18, lon: 120 },
-  { lat: 18, lon: 60 },
-  { lat: -18, lon: 18 },
+  {
+    id: 'perseverance',
+    lat: 18,
+    lon: 120,
+    kicker: 'PERSEVERANCE / MASTCAM-Z',
+    title: 'Perseverance Landing Site',
+    details:
+      'Take a guided tour of key locations visited by Perseverance. Each point of interest along its path includes a video featuring a stunning 360° panorama from Mastcam-Z, the rover’s mast-mounted camera system.',
+  },
+  {
+    id: 'insight',
+    lat: 18,
+    lon: 60,
+    kicker: 'NASA / INSIGHT MISSION',
+    title: 'InSight Landing Site',
+    details:
+      'InSight’s planned target landing area is an ellipse. Three landing ellipses show how the target changes with the planned launch date. The ellipse lowest in the west and highest in the east corresponds to the primary launch date: May 5, 2018.',
+  },
+  {
+    id: 'gale',
+    lat: -18,
+    lon: 18,
+    kicker: 'CURIOSITY / GALE CRATER',
+    title: 'Gale Crater / Curiosity Landing Site',
+    details:
+      'Curiosity landed in Gale Crater on Mars on August 6, 2012. With a diameter of 154 km and a central peak 5.5 km tall, Gale Crater was chosen as the landing site for the Mars Science Laboratory Curiosity rover. The choice was based on evidence from orbiting spacecraft that indicate that the crater may once have contained large amounts of liquid water. The central peak, Mount Sharp, exhibits layered rock deposits rich in sedimentary minerals including clays, sulfates, and salts that require water to form.',
+  },
 ];
 
 export class MarsSceneController {
@@ -22,6 +46,10 @@ export class MarsSceneController {
     this.marsHovered = false;
     this.hoveredMoonId = null;
     this.hoveredSurfaceMarkerIndex = null;
+    this.surfaceMarkerTooltip = document.getElementById('surface-marker-tooltip');
+    this.surfaceMarkerTooltipKicker = this.surfaceMarkerTooltip.querySelector('.fact-kicker');
+    this.surfaceMarkerTooltipTitle = this.surfaceMarkerTooltip.querySelector('h2');
+    this.surfaceMarkerTooltipDetails = this.surfaceMarkerTooltip.querySelector('p');
     this.surfaceMarkers = [];
     this.moonObjects = new Map();
     this.interactiveMeshes = [];
@@ -437,6 +465,39 @@ export class MarsSceneController {
     });
   }
 
+  updateSurfaceMarkerTooltip(markerIndex, event) {
+    const tooltip = this.surfaceMarkerTooltip;
+    const marker = SURFACE_MARKERS[markerIndex];
+
+    if (!marker || !marker.title || !event) {
+      tooltip.classList.add('hidden');
+      tooltip.setAttribute('aria-hidden', 'true');
+      return;
+    }
+
+    this.surfaceMarkerTooltipKicker.textContent = marker.kicker;
+    this.surfaceMarkerTooltipTitle.textContent = marker.title;
+    this.surfaceMarkerTooltipDetails.textContent = marker.details;
+    tooltip.classList.remove('hidden');
+    tooltip.setAttribute('aria-hidden', 'false');
+
+    const gap = 14;
+    const margin = 12;
+    const bounds = tooltip.getBoundingClientRect();
+    let left = event.clientX + gap;
+    let top = event.clientY + gap;
+
+    if (left + bounds.width > window.innerWidth - margin) {
+      left = event.clientX - bounds.width - gap;
+    }
+    if (top + bounds.height > window.innerHeight - margin) {
+      top = event.clientY - bounds.height - gap;
+    }
+
+    tooltip.style.left = `${Math.max(margin, left)}px`;
+    tooltip.style.top = `${Math.max(margin, top)}px`;
+  }
+
   bindEvents() {
     this.onResize = () => {
       if (this.disposed) return;
@@ -451,6 +512,7 @@ export class MarsSceneController {
         this.marsHovered = false;
         this.hoveredMoonId = null;
         this.hoveredSurfaceMarkerIndex = null;
+        this.updateSurfaceMarkerTooltip(null);
         document.body.style.cursor = 'auto';
         return;
       }
@@ -467,6 +529,7 @@ export class MarsSceneController {
           this.hoveredMoonId = hitData.moonId;
           this.hoveredSurfaceMarkerIndex = null;
           this.marsHovered = false;
+          this.updateSurfaceMarkerTooltip(null);
           document.body.style.cursor = 'pointer';
           return;
         }
@@ -474,6 +537,7 @@ export class MarsSceneController {
           this.hoveredSurfaceMarkerIndex = hitData.markerIndex;
           this.hoveredMoonId = null;
           this.marsHovered = false;
+          this.updateSurfaceMarkerTooltip(hitData.markerIndex, e);
           document.body.style.cursor = 'pointer';
           return;
         }
@@ -481,6 +545,7 @@ export class MarsSceneController {
           this.marsHovered = true;
           this.hoveredMoonId = null;
           this.hoveredSurfaceMarkerIndex = null;
+          this.updateSurfaceMarkerTooltip(null);
           document.body.style.cursor = 'pointer';
           return;
         }
@@ -489,6 +554,7 @@ export class MarsSceneController {
       this.marsHovered = false;
       this.hoveredMoonId = null;
       this.hoveredSurfaceMarkerIndex = null;
+      this.updateSurfaceMarkerTooltip(null);
       document.body.style.cursor = 'auto';
     };
 
@@ -517,6 +583,9 @@ export class MarsSceneController {
       const hitData = hits[0].object.userData;
       if (hitData.type === 'moon') {
         introStore.selectMoon(hitData.moonId);
+      } else if (hitData.type === 'surfaceMarker' && phase === 'orbit') {
+        const marker = SURFACE_MARKERS[hitData.markerIndex];
+        if (marker) introStore.setPhase('entering', marker.id);
       } else if (hitData.type === 'mars' && phase === 'orbit') {
         introStore.setPhase('entering');
       }

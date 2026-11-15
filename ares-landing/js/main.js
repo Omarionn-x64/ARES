@@ -1,6 +1,8 @@
 import { MOONS } from './moonFacts.js';
 import { introStore } from './store.js';
 import { MarsSceneController } from './scene.js';
+import { MarsSurfaceMapController } from './marsMap.js';
+import { MARS_SITES } from './siteData.js';
 
 const CUT_AT_SECONDS = 7.0;
 
@@ -17,7 +19,12 @@ const skipIntroBtn = document.getElementById('skip-intro-btn');
 const playVideoBtn = document.getElementById('play-video-btn');
 const dustFlashEl = document.getElementById('dust-flash');
 const enteringOverlayEl = document.getElementById('entering-overlay');
+const diveLabelEl = enteringOverlayEl.querySelector('.dive-label');
+const diveTargetEl = enteringOverlayEl.querySelector('.dive-target');
+const diveDetailsEl = document.getElementById('dive-details');
 const siteHandoffEl = document.getElementById('site-handoff');
+const marsTrekViewEl = document.getElementById('mars-trek-view');
+const trekMapStatusEl = document.getElementById('trek-map-status');
 const srAnnouncerEl = document.getElementById('sr-announcer');
 
 // Moon Fact Card DOM
@@ -36,14 +43,39 @@ const btnMoonDeimos = document.getElementById('btn-moon-deimos');
 const btnEnterMars = document.getElementById('btn-enter-mars');
 const btnLaunchRoute = document.getElementById('btn-launch-route');
 const btnReturnOrbit = document.getElementById('btn-return-orbit');
+const btnCloseTrek = document.getElementById('btn-close-trek');
+const btnToggleMola = document.getElementById('btn-toggle-mola');
+const btnToggleLocalMosaic = document.getElementById('btn-toggle-local-mosaic');
 
 let currentFactIndex = 0;
 let sceneController = null;
+let marsSurfaceMapController = window.L
+  ? new MarsSurfaceMapController('mars-leaflet-map')
+  : null;
 let edlSimRaf = null;
 let edlSimStart = null;
 let hasRealVideo = false;
-
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function openMarsTrekView(siteId) {
+  if (marsSurfaceMapController) {
+    marsSurfaceMapController.open(siteId);
+    return;
+  }
+
+  marsTrekViewEl.classList.remove('hidden');
+  trekMapStatusEl.textContent =
+    'The interactive map library did not load. Check your connection and reload the page.';
+  trekMapStatusEl.classList.remove('hidden');
+}
+
+function closeMarsTrekView() {
+  if (marsSurfaceMapController) {
+    marsSurfaceMapController.close();
+  } else {
+    marsTrekViewEl.classList.add('hidden');
+  }
+}
 
 function announce(message) {
   if (srAnnouncerEl) {
@@ -175,7 +207,7 @@ function renderMoonFactCard(moonId) {
 }
 
 function handleStateChange(state, prevState) {
-  const { phase, selectedMoon } = state;
+  const { phase, selectedMoon, descentTarget } = state;
 
   // Update phase indicator badge
   const phaseLabels = {
@@ -193,6 +225,7 @@ function handleStateChange(state, prevState) {
     factCardEl.classList.add('hidden');
     enteringOverlayEl.classList.add('hidden');
     siteHandoffEl.classList.add('hidden');
+    closeMarsTrekView();
 
     if (hasRealVideo) {
       landingVideoEl.currentTime = 0;
@@ -226,6 +259,8 @@ function handleStateChange(state, prevState) {
     orbitOverlayEl.classList.remove('hidden');
     factCardEl.classList.add('hidden');
     enteringOverlayEl.classList.add('hidden');
+    siteHandoffEl.classList.add('hidden');
+    closeMarsTrekView();
     btnMoonPhobos.classList.remove('active');
     btnMoonDeimos.classList.remove('active');
     announce('Interactive Mars orbit view active. Select Phobos, Deimos, or click Mars to enter.');
@@ -242,15 +277,24 @@ function handleStateChange(state, prevState) {
   }
 
   if (phase === 'entering') {
+    const site = MARS_SITES[descentTarget] || MARS_SITES.gale;
+    closeMarsTrekView();
+    siteHandoffEl.classList.add('hidden');
+    diveLabelEl.textContent = `${site.id.toUpperCase()} LANDING SITE`;
+    diveTargetEl.textContent = `TARGET: ${site.title.toUpperCase()}`;
+    diveDetailsEl.textContent = site.waypoints[0].summary;
+    diveDetailsEl.classList.remove('hidden');
+
     orbitOverlayEl.classList.add('hidden');
     factCardEl.classList.add('hidden');
     enteringOverlayEl.classList.remove('hidden');
-    announce('Diving toward Gale Crater surface map.');
+    announce(`Diving toward ${site.title}.`);
 
     if (sceneController) {
       sceneController.playDiveTransition(reduceMotion);
     } else {
-      siteHandoffEl.classList.remove('hidden');
+      enteringOverlayEl.classList.add('hidden');
+      openMarsTrekView(site.id);
     }
   }
 }
@@ -323,9 +367,15 @@ function initUIEvents() {
 
   // Keyboard navigation & Escape handler
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && introStore.getState().phase === 'moonFact') {
-      currentFactIndex = 0;
-      introStore.selectMoon(null);
+    if (e.key === 'Escape') {
+      if (!marsTrekViewEl.classList.contains('hidden')) {
+        closeMarsTrekView();
+        if (sceneController) sceneController.setOrbitImmediate();
+        introStore.setPhase('orbit');
+      } else if (introStore.getState().phase === 'moonFact') {
+        currentFactIndex = 0;
+        introStore.selectMoon(null);
+      }
     }
   });
 
@@ -364,10 +414,35 @@ function initUIEvents() {
 
   btnReturnOrbit.addEventListener('click', () => {
     siteHandoffEl.classList.add('hidden');
+    closeMarsTrekView();
     if (sceneController) {
       sceneController.setOrbitImmediate();
     }
     introStore.setPhase('orbit');
+  });
+
+  btnCloseTrek.addEventListener('click', () => {
+    closeMarsTrekView();
+    if (sceneController) {
+      sceneController.setOrbitImmediate();
+    }
+    introStore.setPhase('orbit');
+  });
+
+  btnToggleMola.addEventListener('click', () => {
+    if (marsSurfaceMapController) marsSurfaceMapController.toggleMola();
+  });
+
+  btnToggleLocalMosaic.addEventListener('click', () => {
+    if (marsSurfaceMapController) marsSurfaceMapController.toggleLocalMosaic();
+  });
+
+  document.querySelectorAll('.trek-site-switcher [data-site]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (marsSurfaceMapController) {
+        marsSurfaceMapController.loadSite(button.dataset.site);
+      }
+    });
   });
 
   // Fallback page buttons
@@ -382,7 +457,7 @@ function initUIEvents() {
   const fallbackEnterBtn = document.getElementById('fallback-enter-btn');
   if (fallbackEnterBtn) {
     fallbackEnterBtn.addEventListener('click', () => {
-      siteHandoffEl.classList.remove('hidden');
+      openMarsTrekView(introStore.getState().descentTarget || 'gale');
     });
   }
 }
@@ -394,7 +469,8 @@ function bootstrap() {
   if (isWebGLAvailable()) {
     sceneController = new MarsSceneController(canvasEl, () => {
       enteringOverlayEl.classList.add('hidden');
-      siteHandoffEl.classList.remove('hidden');
+      siteHandoffEl.classList.add('hidden');
+      openMarsTrekView(introStore.getState().descentTarget || 'perseverance');
     });
   } else {
     canvasEl.classList.add('hidden');

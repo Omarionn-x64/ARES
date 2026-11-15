@@ -10,6 +10,12 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
     <link rel="stylesheet" href="./css/styles.css" />
     <script type="importmap">
       {
@@ -20,6 +26,11 @@
       }
     </script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -28,6 +39,17 @@
         id="mars-canvas"
         aria-label="Interactive 3D view of Mars and its moons Phobos and Deimos"
       ></canvas>
+
+      <div
+        id="surface-marker-tooltip"
+        class="surface-marker-tooltip hidden"
+        role="tooltip"
+        aria-hidden="true"
+      >
+        <span class="fact-kicker"></span>
+        <h2></h2>
+        <p></p>
+      </div>
 
       <!-- WebGL Fallback Layer -->
       <div
@@ -103,7 +125,7 @@
       <!-- Orbit Phase Title & Hint -->
       <main class="orbit-overlay hidden" id="orbit-overlay">
         <div class="hero-copy">
-          <p class="eyebrow">ASTRONAUT ROUTING AND ENVIRONMENT SURVIVAL</p>
+          <p class="eyebrow">ASTRONAUT RESEARCH AND ENVIRONMENT SURVIVAL</p>
           <h1 class="hero-title">ARES</h1>
           <p class="hero-hint" id="interaction-hint">
             Click a moon for facts. Click Mars to enter.
@@ -156,6 +178,7 @@
           <strong class="dive-target"
             >TARGET: GALE CRATER (4.5895° S, 137.4417° E)</strong
           >
+          <p id="dive-details" class="dive-details hidden"></p>
         </div>
       </div>
 
@@ -187,6 +210,84 @@
               Return to Orbit
             </button>
           </div>
+        </div>
+      </section>
+
+      <section
+        id="mars-trek-view"
+        class="mars-trek-view hidden"
+        aria-label="Interactive Mars surface map"
+      >
+        <header class="trek-toolbar">
+          <div class="trek-site-heading">
+            <span id="trek-kicker" class="trek-kicker"></span>
+            <h1 id="trek-site-title"></h1>
+          </div>
+          <nav class="trek-site-switcher" aria-label="Landing sites">
+            <button type="button" data-site="perseverance">Perseverance</button>
+            <button type="button" data-site="gale">Curiosity / Gale</button>
+            <button type="button" data-site="insight">InSight</button>
+          </nav>
+          <div class="trek-toolbar-actions">
+            <button
+              type="button"
+              id="btn-toggle-local-mosaic"
+              class="trek-toolbar-button hidden"
+              aria-pressed="false"
+            >
+              Local Mosaic: OFF
+            </button>
+            <button
+              type="button"
+              id="btn-toggle-mola"
+              class="trek-toolbar-button"
+              aria-pressed="false"
+            >
+              MOLA Elevation: OFF
+            </button>
+            <button type="button" id="btn-close-trek" class="trek-toolbar-button">
+              Return to Orbit
+            </button>
+          </div>
+        </header>
+        <div class="trek-workspace">
+          <div
+            id="mars-leaflet-map"
+            class="mars-leaflet-map"
+            role="application"
+            aria-label="Interactive Mars mission map"
+          >
+            <p id="trek-map-status" class="trek-map-status hidden" role="status"></p>
+          </div>
+          <aside
+            id="site-info-drawer"
+            class="site-info-drawer"
+            aria-labelledby="drawer-title"
+            aria-live="polite"
+          >
+            <p id="drawer-sol" class="drawer-sol"></p>
+            <h2 id="drawer-title"></h2>
+            <p id="drawer-coords" class="drawer-coords"></p>
+            <dl class="drawer-telemetry">
+              <div>
+                <dt>MOLA elevation</dt>
+                <dd id="drawer-elev"></dd>
+              </div>
+              <div>
+                <dt>Geology</dt>
+                <dd id="drawer-geology"></dd>
+              </div>
+              <div>
+                <dt>Instruments</dt>
+                <dd id="drawer-inst"></dd>
+              </div>
+            </dl>
+            <p id="drawer-summary" class="drawer-summary"></p>
+            <section class="drawer-waypoints" aria-labelledby="drawer-waypoint-heading">
+              <h3 id="drawer-waypoint-heading">Mission waypoints</h3>
+              <div id="drawer-waypoint-list" class="drawer-waypoint-list"></div>
+            </section>
+          </aside>
         </div>
       </section>
 
@@ -236,7 +337,7 @@
 
       <!-- Footer Credits -->
       <footer class="hud-footer" id="hud-footer">
-        <span>Imagery &amp; EDL: NASA / JPL-Caltech / USGS Mars Trek</span>
+        <span>Imagery &amp; EDL: NASA / JPL-Caltech / USGS</span>
 
         <span>Scroll to zoom • Drag to orbit</span>
       </footer>

@@ -6,6 +6,7 @@ class IntroStore {
     this.state = {
       phase: 'video',
       selectedMoon: null,
+      descentTarget: 'gale',
     };
     this.listeners = new Set();
   }
@@ -25,9 +26,18 @@ class IntroStore {
     this.listeners.forEach((fn) => fn(this.state, prev));
   }
 
-  setPhase(phase) {
-    if (this.state.phase === phase) return;
+  setPhase(phase, descentTarget = 'gale') {
+    if (
+      this.state.phase === phase &&
+      (phase !== 'entering' || this.state.descentTarget === descentTarget)
+    ) {
+      return;
+    }
+
     const updates = { phase };
+    if (phase === 'entering') {
+      updates.descentTarget = descentTarget;
+    }
     if (phase !== 'moonFact') {
       updates.selectedMoon = null;
     }
