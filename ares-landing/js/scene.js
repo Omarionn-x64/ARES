@@ -3,37 +3,38 @@ import { gsap } from 'gsap';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MOONS } from './moonFacts.js';
-import { introStore } from './store.js';
-import { SURFACE_MARKERS } from './siteData.js';
+import { createSiteMarker, surfaceDirection } from '../src/intro/SiteMarker';
+import { LANDING_SITES } from '../src/intro/sites';
+import { useIntroStore } from '../src/intro/store';
 
 const START_POS = { x: 0, y: 0.15, z: 1.12 };
 const ORBIT_POS = { x: 0, y: 0.9, z: 5.2 };
-const DIVE_POS = { x: 0, y: 0.1, z: 1.08 };
 const MARS_AXIAL_TILT = (25.19 * Math.PI) / 180;
 
 export class MarsSceneController {
-  constructor(canvas, onDiveComplete, surfaceMarkerTooltip) {
+  constructor(canvas, onSelectSite, onOpenChooser, onHoverSite, reducedMotion = false) {
     this.canvas = canvas;
-    this.onDiveComplete = onDiveComplete;
+    this.onSelectSite = onSelectSite;
+    this.onOpenChooser = onOpenChooser;
+    this.onHoverSite = onHoverSite;
+    this.reducedMotion = reducedMotion;
     this.isMobile = window.innerWidth < 768;
     this.marsHovered = false;
     this.hoveredMoonId = null;
-    this.hoveredSurfaceMarkerIndex = null;
-    this.surfaceMarkerTooltip = surfaceMarkerTooltip;
-    if (!this.surfaceMarkerTooltip) {
-      throw new Error('The Mars surface marker tooltip is unavailable.');
-    }
-    this.surfaceMarkerTooltipKicker = this.surfaceMarkerTooltip.querySelector('.fact-kicker');
-    this.surfaceMarkerTooltipTitle = this.surfaceMarkerTooltip.querySelector('h2');
-    this.surfaceMarkerTooltipDetails = this.surfaceMarkerTooltip.querySelector('p');
-    this.surfaceMarkers = [];
+    this.hoveredSiteId = null;
+    this.highlightedSiteId = null;
+    this.siteMarkers = new Map();
     this.moonObjects = new Map();
     this.interactiveMeshes = [];
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.pointerDownPos = new THREE.Vector2();
+    this.pointerDownPhase = null;
+    this.markerWorldPosition = new THREE.Vector3();
     this.clock = new THREE.Clock();
     this.disposed = false;
+    this.motionTimeline = null;
+    this.pendingSiteFlight = null;
 
     this.initRenderer();
     this.initScene();
@@ -156,11 +157,22 @@ export class MarsSceneController {
         this.marsMesh = model;
         this.marsModel = model;
         this.marsSpinGroup.add(model);
-        this.addSurfaceMarkers();
+        this.addLandingSiteMarkers();
+        const pendingFlight = this.pendingSiteFlight;
+        const { phase, selectedSite } = useIntroStore.getState();
+        if (pendingFlight && phase === 'siteFly' && selectedSite === pendingFlight.siteId) {
+          this.pendingSiteFlight = null;
+          this.flyToSite(
+            pendingFlight.siteId,
+            pendingFlight.reduceMotion,
+            pendingFlight.onComplete
+          );
+        }
       },
       undefined,
       (error) => {
         console.error('Failed to load NASA Mars model:', error);
+        this.pendingSiteFlight = null;
       }
     );
 
@@ -195,51 +207,18 @@ export class MarsSceneController {
     this.marsTiltGroup.add(this.atmosphereMesh);
   }
 
-  addSurfaceMarkers() {
+  addLandingSiteMarkers() {
     if (!this.marsSpinGroup) return;
 
     this.markerGroup.clear();
-    this.surfaceMarkers = [];
+    this.siteMarkers.clear();
+    this.highlightedSiteId = null;
 
-    SURFACE_MARKERS.forEach(({ lat, lon, id }, index) => {
-      const latRad = (lat * Math.PI) / 180;
-      const lonRad = (lon * Math.PI) / 180;
-      const marker = new THREE.Group();
-      const isGale = id === 'gale';
-      const markerScale = isGale ? 1.32 : 1;
-
-      const outline = new THREE.Mesh(
-        new THREE.CircleGeometry(0.032 * markerScale, 24),
-        new THREE.MeshBasicMaterial({
-          color: 0x080808,
-        })
-      );
-      const fill = new THREE.Mesh(
-        new THREE.CircleGeometry(0.024 * markerScale, 24),
-        new THREE.MeshBasicMaterial({
-          color: 0xf4b000,
-        })
-      );
-
-      const radius = 1.02 + index * 0.005;
-      const normal = new THREE.Vector3(
-        Math.cos(latRad) * Math.cos(lonRad),
-        Math.sin(latRad),
-        -Math.cos(latRad) * Math.sin(lonRad)
-      ).normalize();
-
-      marker.position.copy(normal).multiplyScalar(radius);
-      marker.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
-
-      outline.userData = { type: 'surfaceMarker', markerIndex: index, siteId: id };
-      fill.position.z = 0.001;
-      outline.renderOrder = 1;
-      fill.renderOrder = 2;
-      marker.add(outline, fill);
-
-      this.markerGroup.add(marker);
-      this.surfaceMarkers.push(marker);
-      this.interactiveMeshes.push(outline);
+    Object.values(LANDING_SITES).forEach((site) => {
+      const marker = createSiteMarker(site);
+      this.markerGroup.add(marker.group);
+      this.siteMarkers.set(site.id, marker);
+      this.interactiveMeshes.push(marker.hitMesh);
     });
   }
 
@@ -336,6 +315,7 @@ export class MarsSceneController {
   }
 
   setOrbitImmediate() {
+    this.cancelMotion();
     this.camera.position.set(ORBIT_POS.x, ORBIT_POS.y, ORBIT_POS.z);
     this.camera.lookAt(0, 0, 0);
     this.starMaterial.opacity = 0.95;
@@ -345,7 +325,7 @@ export class MarsSceneController {
   }
 
   resetToStart() {
-    gsap.killTweensOf(this.camera.position);
+    this.cancelMotion();
     gsap.killTweensOf(this.starMaterial);
     gsap.killTweensOf(this.atmosphereMaterial.uniforms.uOpacity);
     this.controls.enabled = false;
@@ -356,20 +336,23 @@ export class MarsSceneController {
   }
 
   playPullBackTransition(reduceMotion = false) {
+    this.cancelMotion();
     if (reduceMotion) {
       this.setOrbitImmediate();
-      introStore.setPhase('orbit');
+      useIntroStore.getState().setPhase('orbit');
       return;
     }
 
     this.controls.enabled = false;
     const tl = gsap.timeline({
       onComplete: () => {
+        this.motionTimeline = null;
         this.controls.enabled = true;
         this.controls.update();
-        introStore.setPhase('orbit');
+        useIntroStore.getState().setPhase('orbit');
       },
     });
+    this.motionTimeline = tl;
 
     tl.to(
       this.camera.position,
@@ -406,6 +389,7 @@ export class MarsSceneController {
   }
 
   focusOnMoon(moonId) {
+    this.cancelMotion();
     const moonObj = this.moonObjects.get(moonId);
     if (!moonObj) return;
 
@@ -428,52 +412,86 @@ export class MarsSceneController {
     });
   }
 
-  playDiveTransition(reduceMotion = false) {
-    this.controls.enabled = false;
-    gsap.to(this.camera.position, {
-      x: DIVE_POS.x,
-      y: DIVE_POS.y,
-      z: DIVE_POS.z,
-      duration: reduceMotion ? 0.5 : 2.5,
-      ease: 'power2.in',
-      onUpdate: () => this.camera.lookAt(0, 0, 0),
-      onComplete: () => {
-        if (this.onDiveComplete) this.onDiveComplete();
-      },
-    });
+  cancelMotion() {
+    this.motionTimeline?.kill();
+    this.motionTimeline = null;
+    this.pendingSiteFlight = null;
+    gsap.killTweensOf(this.camera.position);
+    if (this.marsSpinGroup) gsap.killTweensOf(this.marsSpinGroup.rotation);
   }
 
-  updateSurfaceMarkerTooltip(markerIndex, event) {
-    const tooltip = this.surfaceMarkerTooltip;
-    const marker = SURFACE_MARKERS[markerIndex];
-
-    if (!marker || !marker.title || !event) {
-      tooltip.classList.add('hidden');
-      tooltip.setAttribute('aria-hidden', 'true');
+  flyToSite(siteId, reduceMotion = false, onComplete) {
+    const marker = this.siteMarkers.get(siteId);
+    const site = LANDING_SITES[siteId];
+    if (!site) {
+      onComplete?.();
       return;
     }
 
-    this.surfaceMarkerTooltipKicker.textContent = marker.kicker;
-    this.surfaceMarkerTooltipTitle.textContent = marker.title;
-    this.surfaceMarkerTooltipDetails.textContent = marker.details;
-    tooltip.classList.remove('hidden');
-    tooltip.setAttribute('aria-hidden', 'false');
-
-    const gap = 14;
-    const margin = 12;
-    const bounds = tooltip.getBoundingClientRect();
-    let left = event.clientX + gap;
-    let top = event.clientY + gap;
-
-    if (left + bounds.width > window.innerWidth - margin) {
-      left = event.clientX - bounds.width - gap;
-    }
-    if (top + bounds.height > window.innerHeight - margin) {
-      top = event.clientY - bounds.height - gap;
+    this.cancelMotion();
+    if (!marker || !this.marsModel) {
+      this.pendingSiteFlight = { siteId, reduceMotion, onComplete };
+      return;
     }
 
-    tooltip.style.left = `${Math.max(margin, left)}px`;
-    tooltip.style.top = `${Math.max(margin, top)}px`;
+    this.controls.enabled = false;
+    const currentRotation = this.marsSpinGroup.rotation.y;
+    const longitude = THREE.MathUtils.degToRad(site.longitude);
+    const cameraDirection = this.camera.position.clone().normalize();
+    const tiltCos = Math.cos(MARS_AXIAL_TILT);
+    const tiltSin = Math.sin(MARS_AXIAL_TILT);
+    const tiltedCameraX = cameraDirection.x * tiltCos + cameraDirection.y * tiltSin;
+    const rotationCosCoefficient =
+      tiltedCameraX * Math.cos(longitude) + cameraDirection.z * Math.sin(longitude);
+    const rotationSinCoefficient =
+      tiltedCameraX * Math.sin(longitude) - cameraDirection.z * Math.cos(longitude);
+    const desiredRotation = Math.atan2(rotationSinCoefficient, rotationCosCoefficient);
+    const shortestTurn = Math.atan2(
+      Math.sin(desiredRotation - currentRotation),
+      Math.cos(desiredRotation - currentRotation)
+    );
+    const targetRotation = currentRotation + shortestTurn;
+
+    const sitePoint = surfaceDirection(site.latitude, site.longitude)
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), targetRotation)
+      .applyAxisAngle(new THREE.Vector3(0, 0, 1), MARS_AXIAL_TILT)
+      .multiplyScalar(1.012);
+    const siteDirection = sitePoint.clone().normalize();
+    const approachPosition = siteDirection.clone().multiplyScalar(3.1);
+    const surfacePosition = siteDirection.clone().multiplyScalar(1.34);
+    const rotateDuration = reduceMotion ? 0.1 : 1.05;
+    const approachDuration = reduceMotion ? 0.2 : 1.2;
+    const descentDuration = reduceMotion ? 0.2 : 1.0;
+    const lookAtSite = () => this.camera.lookAt(sitePoint);
+
+    const timeline = gsap.timeline({
+      onComplete: () => {
+        this.motionTimeline = null;
+        onComplete?.();
+      },
+    });
+    this.motionTimeline = timeline;
+    timeline.to(this.marsSpinGroup.rotation, {
+      y: targetRotation,
+      duration: rotateDuration,
+      ease: reduceMotion ? 'none' : 'power2.inOut',
+    });
+    timeline.to(this.camera.position, {
+      x: approachPosition.x,
+      y: approachPosition.y,
+      z: approachPosition.z,
+      duration: approachDuration,
+      ease: reduceMotion ? 'none' : 'power2.inOut',
+      onUpdate: lookAtSite,
+    });
+    timeline.to(this.camera.position, {
+      x: surfacePosition.x,
+      y: surfacePosition.y,
+      z: surfacePosition.z,
+      duration: descentDuration,
+      ease: reduceMotion ? 'none' : 'power2.in',
+      onUpdate: lookAtSite,
+    });
   }
 
   bindEvents() {
@@ -484,17 +502,24 @@ export class MarsSceneController {
       this.renderer.setSize(window.innerWidth, window.innerHeight);
     };
 
+    const clearHover = () => {
+      this.marsHovered = false;
+      this.hoveredMoonId = null;
+      this.hoveredSiteId = null;
+      this.onHoverSite(null);
+      document.body.style.cursor = 'auto';
+    };
+
     this.onPointerMove = (e) => {
-      const { phase } = introStore.getState();
-      if (phase !== 'orbit' && phase !== 'moonFact') {
-        this.marsHovered = false;
-        this.hoveredMoonId = null;
-        this.hoveredSurfaceMarkerIndex = null;
-        this.updateSurfaceMarkerTooltip(null);
-        document.body.style.cursor = 'auto';
+      if (e.target instanceof Element && e.target.closest('[data-site-chooser]')) return;
+      const { phase } = useIntroStore.getState();
+      if (
+        (phase !== 'orbit' && phase !== 'moonFact' && phase !== 'siteSelect') ||
+        e.target !== this.canvas
+      ) {
+        clearHover();
         return;
       }
-
       this.pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
       this.pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
@@ -505,50 +530,50 @@ export class MarsSceneController {
         const hitData = hits[0].object.userData;
         if (hitData.type === 'moon') {
           this.hoveredMoonId = hitData.moonId;
-          this.hoveredSurfaceMarkerIndex = null;
+          this.hoveredSiteId = null;
+          this.onHoverSite(null);
           this.marsHovered = false;
-          this.updateSurfaceMarkerTooltip(null);
           document.body.style.cursor = 'pointer';
           return;
         }
-        if (hitData.type === 'surfaceMarker') {
-          this.hoveredSurfaceMarkerIndex = hitData.markerIndex;
+        if (hitData.type === 'siteMarker') {
+          this.hoveredSiteId = hitData.siteId;
+          this.onHoverSite(hitData.siteId);
           this.hoveredMoonId = null;
           this.marsHovered = false;
-          this.updateSurfaceMarkerTooltip(hitData.markerIndex, e);
           document.body.style.cursor = 'pointer';
           return;
         }
-        if (hitData.type === 'mars' && phase === 'orbit') {
+        if (hitData.type === 'mars') {
           this.marsHovered = true;
           this.hoveredMoonId = null;
-          this.hoveredSurfaceMarkerIndex = null;
-          this.updateSurfaceMarkerTooltip(null);
+          this.hoveredSiteId = null;
+          this.onHoverSite(null);
           document.body.style.cursor = 'pointer';
           return;
         }
       }
 
-      this.marsHovered = false;
-      this.hoveredMoonId = null;
-      this.hoveredSurfaceMarkerIndex = null;
-      this.updateSurfaceMarkerTooltip(null);
-      document.body.style.cursor = 'auto';
+      clearHover();
     };
 
     this.onPointerDown = (e) => {
+      if (e.target !== this.canvas) return;
       this.pointerDownPos.set(e.clientX, e.clientY);
+      this.pointerDownPhase = useIntroStore.getState().phase;
     };
 
     this.onPointerUp = (e) => {
+      if (e.target !== this.canvas) return;
+      if (this.pointerDownPhase === 'siteSelect') return;
       const dist = Math.hypot(
         e.clientX - this.pointerDownPos.x,
         e.clientY - this.pointerDownPos.y
       );
       if (dist > 6) return;
 
-      const { phase } = introStore.getState();
-      if (phase !== 'orbit' && phase !== 'moonFact') return;
+      const { phase } = useIntroStore.getState();
+      if (phase !== 'orbit' && phase !== 'moonFact' && phase !== 'siteSelect') return;
 
       this.pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
       this.pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
@@ -560,38 +585,52 @@ export class MarsSceneController {
       const hitData = hits[0].object.userData;
 
       if (hitData.type === 'moon') {
-        introStore.selectMoon(hitData.moonId);
+        useIntroStore.getState().selectMoon(hitData.moonId);
         return;
       }
 
-      if (hitData.type === 'surfaceMarker' && phase === 'orbit') {
-        const marker = SURFACE_MARKERS[hitData.markerIndex];
-        if (marker) introStore.setPhase('entering', marker.id);
+      if (hitData.type === 'siteMarker') {
+        this.onSelectSite(hitData.siteId);
         return;
       }
 
-      if (hitData.type === 'mars' && phase === 'orbit') {
-        introStore.setPhase('entering');
+      if (hitData.type === 'mars') {
+        this.onOpenChooser();
       }
     };
 
     window.addEventListener('resize', this.onResize);
     window.addEventListener('pointermove', this.onPointerMove);
-    window.addEventListener('pointerdown', this.onPointerDown);
+    window.addEventListener('pointerdown', this.onPointerDown, true);
     window.addEventListener('pointerup', this.onPointerUp);
   }
 
   animate() {
     this.rafId = requestAnimationFrame(this.animate);
 
-    const { phase } = introStore.getState();
+    const { phase, hoveredSite, selectedSite } = useIntroStore.getState();
     if (
       this.marsSpinGroup &&
       phase !== 'video' &&
-      this.hoveredSurfaceMarkerIndex === null
+      phase !== 'siteFly' &&
+      phase !== 'sitePage'
     ) {
       this.marsSpinGroup.rotation.y += 0.0022;
     }
+
+    const activeSiteId =
+      hoveredSite || (phase === 'siteFly' || phase === 'sitePage' ? selectedSite : null);
+    const time = this.clock.getElapsedTime();
+    this.siteMarkers.forEach((marker, siteId) => {
+      if (this.highlightedSiteId !== activeSiteId) {
+        marker.setHighlighted(siteId === activeSiteId);
+      }
+      const markerPosition = marker.group.getWorldPosition(this.markerWorldPosition);
+      const cameraDistance = this.camera.position.distanceTo(markerPosition);
+      marker.updateLabelScale(cameraDistance);
+      marker.updatePulse(time, this.reducedMotion, cameraDistance);
+    });
+    this.highlightedSiteId = activeSiteId;
 
     if (this.controls && this.controls.enabled) {
       this.controls.update();
@@ -623,9 +662,9 @@ export class MarsSceneController {
     cancelAnimationFrame(this.rafId);
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('pointermove', this.onPointerMove);
-    window.removeEventListener('pointerdown', this.onPointerDown);
+    window.removeEventListener('pointerdown', this.onPointerDown, true);
     window.removeEventListener('pointerup', this.onPointerUp);
-    gsap.killTweensOf(this.camera.position);
+    this.cancelMotion();
     gsap.killTweensOf(this.starMaterial);
     if (this.atmosphereMaterial) {
       gsap.killTweensOf(this.atmosphereMaterial.uniforms.uOpacity);
@@ -639,8 +678,6 @@ export class MarsSceneController {
       }
     });
     this.renderer.dispose();
-    this.surfaceMarkerTooltip.classList.add('hidden');
-    this.surfaceMarkerTooltip.setAttribute('aria-hidden', 'true');
     document.body.style.cursor = 'auto';
   }
 }

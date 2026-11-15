@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MOONS } from '../js/moonFacts.js';
 import { MarsSceneController } from '../js/scene.js';
 import { MarsSurfaceMapController } from '../js/marsMap.js';
 import { MARS_SITES } from '../js/siteData.js';
-import { introStore } from '../js/store.js';
+import SiteChooser from './intro/SiteChooser';
+import { formatSiteCoordinates, getSiteForPath, LANDING_SITES } from './intro/sites';
+import { useIntroStore } from './intro/store';
 
 const CUT_AT_SECONDS = 7;
 const PHASE_LABELS = {
@@ -11,6 +13,9 @@ const PHASE_LABELS = {
   transition: 'ORBITAL INSERTION',
   orbit: 'ORBITAL OVERVIEW',
   moonFact: 'SATELLITE INSPECTION',
+  siteSelect: 'LANDING SITE SELECTION',
+  siteFly: 'SURFACE DESCENT',
+  sitePage: 'MISSION SITE',
   entering: 'SURFACE DESCENT',
 };
 const DEFAULT_MAP_STATE = {
@@ -20,9 +25,6 @@ const DEFAULT_MAP_STATE = {
   molaEnabled: false,
   localMosaicEnabled: false,
 };
-const subscribeToStore = (listener) => introStore.subscribe(listener);
-const getStoreSnapshot = () => introStore.getState();
-
 function isWebGLAvailable() {
   try {
     const canvas = document.createElement('canvas');
@@ -42,13 +44,16 @@ function formatCoordinates([latitude, longitude]) {
 }
 
 function App() {
-  const state = useSyncExternalStore(
-    subscribeToStore,
-    getStoreSnapshot
-  );
-  const { phase, selectedMoon, descentTarget } = state;
+  const phase = useIntroStore((state) => state.phase);
+  const selectedMoon = useIntroStore((state) => state.selectedMoon);
+  const selectedSite = useIntroStore((state) => state.selectedSite);
+  const openSiteChooserInStore = useIntroStore((state) => state.openSiteChooser);
+  const chooseSiteInStore = useIntroStore((state) => state.chooseSite);
+  const returnToOrbitInStore = useIntroStore((state) => state.returnToOrbit);
+  const selectMoonInStore = useIntroStore((state) => state.selectMoon);
+  const setHoveredSiteInStore = useIntroStore((state) => state.setHoveredSite);
   const canvasRef = useRef(null);
-  const tooltipRef = useRef(null);
+  const siteChooserTriggerRef = useRef(null);
   const videoRef = useRef(null);
   const edlCanvasRef = useRef(null);
   const edlTimerRef = useRef(null);
@@ -57,9 +62,10 @@ function App() {
   const mapControllerRef = useRef(null);
   const previousMoonRef = useRef(null);
   const transitionStartedRef = useRef(false);
-  const enteringTargetRef = useRef(null);
+  const siteFlightTargetRef = useRef(null);
   const edlAnimationRef = useRef(null);
   const transitionTimersRef = useRef([]);
+  const initialRouteRef = useRef(window.location.pathname);
   const [webglAvailable, setWebglAvailable] = useState(true);
   const [mapAvailable, setMapAvailable] = useState(true);
   const [mapOpen, setMapOpen] = useState(false);
@@ -72,10 +78,11 @@ function App() {
   const [videoFading, setVideoFading] = useState(false);
   const [dustFlashVisible, setDustFlashVisible] = useState(false);
   const [hasVisited, setHasVisited] = useState(false);
-  const [diveDetails, setDiveDetails] = useState('');
   const [announcement, setAnnouncement] = useState('');
+  const [route, setRoute] = useState(() => window.location.pathname);
   const reduceMotion = useRef(false);
 
+  const routeSite = getSiteForPath(route);
   const selectedMoonData = MOONS.find((moon) => moon.id === selectedMoon);
   const currentFact = selectedMoonData?.facts[currentFactIndex];
   const activeSite = mapState.site;
@@ -99,6 +106,22 @@ function App() {
     setMapOpen(false);
   }, []);
 
+  const navigateToSite = useCallback((siteId) => {
+    const site = LANDING_SITES[siteId];
+    window.history.pushState({ aresSite: siteId }, '', site.route);
+    setRoute(site.route);
+    useIntroStore.getState().setSitePage(siteId);
+  }, []);
+
+  const closeSiteChooser = useCallback(() => {
+    useIntroStore.getState().setPhase('orbit');
+  }, []);
+
+  const chooseLandingSite = useCallback(
+    (site) => chooseSiteInStore(site.id),
+    [chooseSiteInStore]
+  );
+
   const stopEdlFallbackAnimation = useCallback(() => {
     if (edlAnimationRef.current !== null) {
       cancelAnimationFrame(edlAnimationRef.current);
@@ -114,7 +137,7 @@ function App() {
     const startedAt = performance.now();
 
     const renderFrame = (now) => {
-      if (introStore.getState().phase !== 'video') return;
+      if (useIntroStore.getState().phase !== 'video') return;
 
       const elapsed = (now - startedAt) / 1000;
       const progress = Math.min(elapsed / CUT_AT_SECONDS, 1);
@@ -166,7 +189,7 @@ function App() {
       }
 
       if (elapsed >= CUT_AT_SECONDS) {
-        introStore.setPhase('transition');
+        useIntroStore.getState().setPhase('transition');
         return;
       }
       edlAnimationRef.current = requestAnimationFrame(renderFrame);
@@ -174,6 +197,16 @@ function App() {
 
     edlAnimationRef.current = requestAnimationFrame(renderFrame);
   }, [stopEdlFallbackAnimation]);
+
+  const openSiteChooser = useCallback(() => {
+    if (useIntroStore.getState().phase === 'video') {
+      stopEdlFallbackAnimation();
+      videoRef.current?.pause();
+      setVideoVisible(false);
+      sceneControllerRef.current?.setOrbitImmediate();
+    }
+    openSiteChooserInStore();
+  }, [openSiteChooserInStore, stopEdlFallbackAnimation]);
 
   useEffect(() => {
     reduceMotion.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -185,10 +218,10 @@ function App() {
       try {
         sceneControllerRef.current = new MarsSceneController(
           canvasRef.current,
-          () => {
-            openMarsTrekView(introStore.getState().descentTarget || 'perseverance');
-          },
-          tooltipRef.current
+          chooseSiteInStore,
+          openSiteChooser,
+          setHoveredSiteInStore,
+          reduceMotion.current
         );
       } catch (error) {
         console.error('Failed to initialize the Mars scene:', error);
@@ -210,10 +243,15 @@ function App() {
       }));
     }
 
-    if (reduceMotion.current) {
+    const initialSite = getSiteForPath(initialRouteRef.current);
+    if (initialSite) {
+      useIntroStore.getState().setSitePage(initialSite.id);
       setVideoVisible(false);
       sceneControllerRef.current?.setOrbitImmediate();
-      introStore.setPhase('orbit');
+    } else if (reduceMotion.current) {
+      setVideoVisible(false);
+      sceneControllerRef.current?.setOrbitImmediate();
+      useIntroStore.getState().setPhase('orbit');
     } else {
       localStorage.setItem('ares_intro_seen', '1');
     }
@@ -226,18 +264,40 @@ function App() {
       sceneControllerRef.current = null;
       mapControllerRef.current = null;
     };
-  }, [openMarsTrekView, stopEdlFallbackAnimation]);
+  }, [
+    chooseSiteInStore,
+    openSiteChooser,
+    openMarsTrekView,
+    setHoveredSiteInStore,
+    stopEdlFallbackAnimation,
+  ]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const path = window.location.pathname;
+      const site = getSiteForPath(path);
+      setRoute(path);
+      setMapOpen(false);
+      if (site) {
+        useIntroStore.getState().setSitePage(site.id);
+      } else {
+        returnToOrbitInStore();
+        sceneControllerRef.current?.setOrbitImmediate();
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [returnToOrbitInStore]);
 
   useEffect(() => {
     if (phase === 'video') {
       transitionStartedRef.current = false;
-      enteringTargetRef.current = null;
+      siteFlightTargetRef.current = null;
       transitionTimersRef.current.forEach((timer) => window.clearTimeout(timer));
       transitionTimersRef.current = [];
       setVideoVisible(true);
       setVideoFading(false);
       setMapOpen(false);
-      setDiveDetails('');
       closeMarsTrekView();
       if (hasRealVideo && videoRef.current) {
         videoRef.current.currentTime = 0;
@@ -262,17 +322,25 @@ function App() {
       if (sceneControllerRef.current) {
         sceneControllerRef.current.playPullBackTransition(reduceMotion.current);
       } else {
-        introStore.setPhase('orbit');
+        useIntroStore.getState().setPhase('orbit');
       }
       return;
     }
 
     if (phase === 'orbit') {
-      enteringTargetRef.current = null;
+      siteFlightTargetRef.current = null;
       setVideoVisible(false);
       setMapOpen(false);
       closeMarsTrekView();
       announce('Interactive Mars orbit view active. Select Phobos, Deimos, or click Mars to enter.');
+      return;
+    }
+
+    if (phase === 'siteSelect') {
+      setVideoVisible(false);
+      setMapOpen(false);
+      closeMarsTrekView();
+      announce('Choose a Mars landing site, or select a highlighted marker on the globe.');
       return;
     }
 
@@ -287,72 +355,100 @@ function App() {
       return;
     }
 
-    if (phase === 'entering') {
-      const site = MARS_SITES[descentTarget] || MARS_SITES.gale;
-      if (enteringTargetRef.current === site.id) return;
-      enteringTargetRef.current = site.id;
+    if (phase === 'siteFly' && selectedSite) {
+      if (siteFlightTargetRef.current === selectedSite) return;
+      siteFlightTargetRef.current = selectedSite;
+      setVideoVisible(false);
+      const completeFlight = () => navigateToSite(selectedSite);
+      if (sceneControllerRef.current) {
+        sceneControllerRef.current.flyToSite(selectedSite, reduceMotion.current, completeFlight);
+      } else {
+        window.setTimeout(completeFlight, reduceMotion.current ? 50 : 250);
+      }
+      announce(`Flying to ${LANDING_SITES[selectedSite].displayName}.`);
+      return;
+    }
+
+    if (phase === 'sitePage') {
+      setVideoVisible(false);
       setMapOpen(false);
       closeMarsTrekView();
-      setDiveDetails(site.waypoints[0].summary);
-      announce(`Diving toward ${site.title}.`);
-      if (sceneControllerRef.current) {
-        sceneControllerRef.current.playDiveTransition(reduceMotion.current);
-      } else {
-        openMarsTrekView(site.id);
-      }
+      stopEdlFallbackAnimation();
+      return;
     }
   }, [
     announce,
     closeMarsTrekView,
     currentFactIndex,
-    descentTarget,
     hasRealVideo,
-    openMarsTrekView,
+    navigateToSite,
     phase,
+    selectedSite,
     selectedMoon,
     startEdlFallbackAnimation,
     stopEdlFallbackAnimation,
   ]);
+
+  const backToOrbit = useCallback(() => {
+    if (routeSite && window.history.state?.aresSite === routeSite.id) {
+      window.history.back();
+      return;
+    }
+    window.history.replaceState(null, '', '/');
+    setRoute('/');
+    setMapOpen(false);
+    returnToOrbitInStore();
+    sceneControllerRef.current?.setOrbitImmediate();
+  }, [returnToOrbitInStore, routeSite]);
+
+  const openSiteMap = useCallback(() => {
+    if (!routeSite) return;
+    const mapSiteId = routeSite.id === 'jezero' ? 'perseverance' : routeSite.id;
+    openMarsTrekView(mapSiteId);
+  }, [openMarsTrekView, routeSite]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key !== 'Escape') return;
       if (mapOpen) {
         closeMarsTrekView();
-        sceneControllerRef.current?.setOrbitImmediate();
-        introStore.setPhase('orbit');
-      } else if (introStore.getState().phase === 'moonFact') {
+        if (!routeSite) {
+          backToOrbit();
+        }
+      } else if (useIntroStore.getState().phase === 'siteSelect') {
+        closeSiteChooser();
+      } else if (useIntroStore.getState().phase === 'moonFact') {
         setCurrentFactIndex(0);
-        introStore.selectMoon(null);
+        selectMoonInStore(null);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [closeMarsTrekView, mapOpen]);
+  }, [backToOrbit, closeMarsTrekView, closeSiteChooser, mapOpen, routeSite, selectMoonInStore]);
 
   const selectMoon = (moonId) => {
-    if (introStore.getState().phase === 'video') introStore.setPhase('orbit');
-    introStore.selectMoon(moonId);
-  };
-
-  const enterMars = () => {
-    if (introStore.getState().phase === 'video') {
+    if (useIntroStore.getState().phase === 'video') {
+      stopEdlFallbackAnimation();
       setVideoVisible(false);
-      sceneControllerRef.current?.setOrbitImmediate();
     }
-    introStore.setPhase('entering');
+    selectMoonInStore(moonId);
   };
 
   const replayIntro = () => {
     closeMarsTrekView();
+    if (routeSite) {
+      window.history.replaceState(null, '', '/');
+      setRoute('/');
+      returnToOrbitInStore();
+    }
     sceneControllerRef.current?.resetToStart();
-    introStore.setPhase('video');
+    useIntroStore.getState().setPhase('video');
   };
 
   const closeFactCard = () => {
     setCurrentFactIndex(0);
     previousMoonRef.current = null;
-    introStore.selectMoon(null);
+    selectMoonInStore(null);
   };
 
   const nextFact = () => {
@@ -373,16 +469,16 @@ function App() {
   const handleVideoError = () => {
     setHasRealVideo(false);
     setVideoFailed(true);
-    if (introStore.getState().phase === 'video') startEdlFallbackAnimation();
+    if (useIntroStore.getState().phase === 'video') startEdlFallbackAnimation();
   };
 
   const handleVideoTimeUpdate = () => {
     const video = videoRef.current;
-    if (!video || introStore.getState().phase !== 'video') return;
+    if (!video || useIntroStore.getState().phase !== 'video') return;
     if (edlTimerRef.current) {
       edlTimerRef.current.textContent = `T+ 0${video.currentTime.toFixed(1)}s — DESCENT FEED`;
     }
-    if (video.currentTime >= CUT_AT_SECONDS) introStore.setPhase('transition');
+    if (video.currentTime >= CUT_AT_SECONDS) useIntroStore.getState().setPhase('transition');
   };
 
   const playVideo = () => {
@@ -400,18 +496,6 @@ function App() {
         aria-label="Interactive 3D view of Mars and its moons Phobos and Deimos"
         className={!webglAvailable ? 'hidden' : ''}
       />
-
-      <div
-        ref={tooltipRef}
-        id="surface-marker-tooltip"
-        className="surface-marker-tooltip hidden"
-        role="tooltip"
-        aria-hidden="true"
-      >
-        <span className="fact-kicker" />
-        <h2 />
-        <p />
-      </div>
 
       {!webglAvailable && (
         <div className="webgl-fallback" role="region" aria-label="ARES Static Fallback View">
@@ -432,9 +516,9 @@ function App() {
               <button
                 type="button"
                 className="hud-btn primary"
-                onClick={() => openMarsTrekView(introStore.getState().descentTarget || 'gale')}
+                onClick={openSiteChooser}
               >
-                Enter Mars (Gale Crater)
+                Choose landing site
               </button>
             </div>
           </div>
@@ -456,23 +540,46 @@ function App() {
           >
             Replay Intro
           </button>
-          <button
-            type="button"
-            className={`nav-chip${selectedMoon === 'phobos' ? ' active' : ''}`}
-            onClick={() => selectMoon('phobos')}
-          >
-            Phobos
-          </button>
-          <button
-            type="button"
-            className={`nav-chip${selectedMoon === 'deimos' ? ' active' : ''}`}
-            onClick={() => selectMoon('deimos')}
-          >
-            Deimos
-          </button>
-          <button type="button" className="nav-chip accent" onClick={enterMars}>
-            Enter Mars
-          </button>
+          {!routeSite && (
+            <>
+              <button
+                type="button"
+                className={`nav-chip${selectedMoon === 'phobos' ? ' active' : ''}`}
+                disabled={phase === 'siteFly'}
+                onClick={() => selectMoon('phobos')}
+              >
+                Phobos
+              </button>
+              <button
+                type="button"
+                className={`nav-chip${selectedMoon === 'deimos' ? ' active' : ''}`}
+                disabled={phase === 'siteFly'}
+                onClick={() => selectMoon('deimos')}
+              >
+                Deimos
+              </button>
+              <div className="site-chooser-anchor">
+                <button
+                  ref={siteChooserTriggerRef}
+                  type="button"
+                  className={`nav-chip accent${phase === 'siteSelect' ? ' active' : ''}`}
+                  aria-haspopup="dialog"
+                  aria-controls={phase === 'siteSelect' ? 'landing-site-chooser' : undefined}
+                  aria-expanded={phase === 'siteSelect'}
+                  disabled={phase === 'siteFly'}
+                  onClick={() => (phase === 'siteSelect' ? closeSiteChooser() : openSiteChooser())}
+                >
+                  Choose landing site
+                </button>
+                <SiteChooser
+                  open={phase === 'siteSelect'}
+                  triggerRef={siteChooserTriggerRef}
+                  onClose={closeSiteChooser}
+                  onChoose={chooseLandingSite}
+                />
+              </div>
+            </>
+          )}
         </nav>
       </header>
 
@@ -480,7 +587,9 @@ function App() {
         <div className="hero-copy">
           <p className="eyebrow">ASTRONAUT RESEARCH AND ENVIRONMENT SURVIVAL</p>
           <h1 className="hero-title">ARES</h1>
-          <p className="hero-hint">Click a moon for facts. Click Mars to enter.</p>
+          <p className="hero-hint">
+            Click a moon for facts. Click Mars or choose a landing site to select a destination.
+          </p>
         </div>
       </main>
 
@@ -516,17 +625,26 @@ function App() {
         </div>
       </aside>
 
-      <div className={`entering-overlay${phase === 'entering' ? '' : ' hidden'}`} aria-live="polite">
-        <div className="dive-reticle">
-          <span className="dive-label">
-            {MARS_SITES[descentTarget]?.id.toUpperCase() || 'GALE'} LANDING SITE
-          </span>
-          <strong className="dive-target">
-            TARGET: {MARS_SITES[descentTarget]?.title.toUpperCase() || MARS_SITES.gale.title.toUpperCase()}
-          </strong>
-          <p className={`dive-details${diveDetails ? '' : ' hidden'}`}>{diveDetails}</p>
-        </div>
-      </div>
+      {routeSite && phase === 'sitePage' && !mapOpen && (
+        <main className="site-page" aria-labelledby="site-page-title">
+          <section className="site-page-card">
+            <span className="site-chooser-kicker">{routeSite.accentLabel}</span>
+            <h1 id="site-page-title">{routeSite.displayName}</h1>
+            <p className="site-page-mission">{routeSite.mission}</p>
+            <p className="site-page-region">{routeSite.region}</p>
+            <p className="site-page-coordinates">{formatSiteCoordinates(routeSite)}</p>
+            <p className="site-page-blurb">{routeSite.blurb}</p>
+            <div className="site-page-actions">
+              <button type="button" className="nav-chip" onClick={openSiteMap}>
+                Explore surface map
+              </button>
+              <button type="button" className="nav-chip accent" onClick={backToOrbit}>
+                Back to orbit
+              </button>
+            </div>
+          </section>
+        </main>
+      )}
 
       <section
         className={`mars-trek-view${mapOpen ? ' is-open' : ' hidden'}`}
@@ -571,12 +689,12 @@ function App() {
             >
               MOLA Elevation: {mapState.molaEnabled ? 'ON' : 'OFF'}
             </button>
-            <button type="button" className="trek-toolbar-button" onClick={() => {
-              closeMarsTrekView();
-              sceneControllerRef.current?.setOrbitImmediate();
-              introStore.setPhase('orbit');
-            }}>
-              Return to Orbit
+            <button
+              type="button"
+              className="trek-toolbar-button"
+              onClick={() => (routeSite ? closeMarsTrekView() : backToOrbit())}
+            >
+              {routeSite ? 'Return to Site' : 'Return to Orbit'}
             </button>
           </div>
         </header>
@@ -660,7 +778,9 @@ function App() {
           onLoadedData={handleVideoLoaded}
           onTimeUpdate={handleVideoTimeUpdate}
           onEnded={() => {
-            if (introStore.getState().phase === 'video') introStore.setPhase('transition');
+            if (useIntroStore.getState().phase === 'video') {
+              useIntroStore.getState().setPhase('transition');
+            }
           }}
           onError={handleVideoError}
         >
@@ -689,7 +809,7 @@ function App() {
             <button
               type="button"
               className="hud-btn skip-btn"
-              onClick={() => introStore.setPhase('transition')}
+              onClick={() => useIntroStore.getState().setPhase('transition')}
             >
               Skip intro
             </button>
